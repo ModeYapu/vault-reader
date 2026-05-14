@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go version *)",
+      "Bash(mkdir *)",
+      "Bash(go mod *)",
+      "Bash(go test *)",
+      "Bash(go get *)",
+      "Bash(go env *)",
+      "Bash(ls \"$\\(go env GOMODCACHE\\)/github.com/yuin/goldmark@v1.8.2/extension/\")",
+      "Bash(grep \"func.*TaskList\\\\|func.*Task\" \"$\\(go env GOMODCACHE\\)/github.com/yuin/goldmark@v1.8.2/extension/tasklist.go\")",
+      "Bash(go build *)",
+      "Bash(timeout 5 ./bin/vault-reader --vault ./test-vault)",
+      "Bash(./bin/vault-reader.exe --vault ./test-vault)",
+      "Bash(curl -s http://127.0.0.1:3000/api/tree)",
+      "Bash(./bin/vault-reader.exe --vault ./test-vault --addr :38000)",
+      "Bash(curl -s http://127.0.0.1:38000/api/tree)",
+      "Bash(curl -s \"http://127.0.0.1:38000/api/note?path=20_Debug/OpenClaw.md\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl *)",
+      "Bash(taskkill //F //IM vault-reader.exe)",
+      "Bash(grep -oP 'callout-content.{0,200}')",
+      "Bash(./vault-reader.exe *)",
+      "Bash(python *)",
+      "Bash(xxd)"
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+services:
+  vault-reader:
+    image: vault-reader:latest
+    container_name: vault-reader
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      VAULT_DIR: /vault
+      DATA_DIR: /data
+      ADDR: ":3000"
+    volumes:
+      - /opt/obsidian-vault:/vault:ro
+      - /opt/vault-reader-data:/data
