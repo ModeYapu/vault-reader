@@ -9,6 +9,7 @@ const indexHTML = `<!DOCTYPE html>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <style>
         /* ==================== Theme: Light (default) ==================== */
         :root, [data-theme="light"] {
@@ -267,6 +268,10 @@ const indexHTML = `<!DOCTYPE html>
         .callout-collapsed .callout-content { display: none; }
         [data-theme="dark"] .callout { background: color-mix(in srgb, var(--callout-color) 12%, var(--bg)); }
         [id^="block-"] { scroll-margin-top: 20px; border-radius: var(--radius-sm); padding: 2px 4px; margin: -2px -4px; }
+        .mermaid-diagram { margin: 16px 0; text-align: center; overflow-x: auto; }
+        .mermaid-diagram svg { max-width: 100%; height: auto; }
+        .mermaid-error { border: 1px dashed var(--error, #e74c3c); padding: 8px 12px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--error, #e74c3c) 8%, var(--bg)); }
+        .mermaid-error-msg { color: var(--error, #e74c3c); font-size: 0.85em; margin-top: 4px; }
 
         /* ==================== Right Sidebar ==================== */
         .right-sidebar {
@@ -390,6 +395,47 @@ const indexHTML = `<!DOCTYPE html>
     <script>
     const $ = id => document.getElementById(id);
     let currentPath = null;
+
+    // ==================== Mermaid Init ====================
+    (function() {
+        if (typeof mermaid !== 'undefined') {
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            mermaid.initialize({
+                startOnLoad: false,
+                theme: isDark ? 'dark' : 'default',
+                securityLevel: 'loose',
+                fontFamily: 'var(--font-mono)'
+            });
+        }
+    })();
+
+    async function renderMermaidDiagrams() {
+        if (typeof mermaid === 'undefined') return;
+        const content = document.querySelector('.note-content');
+        if (!content) return;
+        const blocks = content.querySelectorAll('code.language-mermaid');
+        for (const block of blocks) {
+            const pre = block.parentElement;
+            if (!pre || pre.tagName !== 'PRE') continue;
+            if (pre.classList.contains('mermaid-rendered')) continue;
+            pre.classList.add('mermaid-rendered');
+            const id = 'mermaid-' + Math.random().toString(36).substr(2, 9);
+            const src = block.textContent;
+            try {
+                const { svg } = await mermaid.render(id, src);
+                const wrapper = document.createElement('div');
+                wrapper.className = 'mermaid-diagram';
+                wrapper.innerHTML = svg;
+                pre.replaceWith(wrapper);
+            } catch (err) {
+                pre.classList.add('mermaid-error');
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'mermaid-error-msg';
+                errorDiv.textContent = 'Mermaid render error: ' + (err.message || err);
+                pre.appendChild(errorDiv);
+            }
+        }
+    }
 
     // ==================== Theme Toggle ====================
     (function() {
@@ -515,6 +561,9 @@ const indexHTML = `<!DOCTYPE html>
             document.title = note.title + ' - Vault Reader';
             $('content').scrollTop = 0;
             loadTree();
+
+            // Render mermaid diagrams
+            renderMermaidDiagrams();
 
             // Scroll to block or heading if hash target exists
             if (hashTarget) {
