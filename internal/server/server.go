@@ -2,10 +2,12 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"vault-reader/internal/indexer"
@@ -49,9 +51,7 @@ func New(vaultDir string, opts ...Option) *Server {
 
 // buildResolver scans the vault and builds the link resolver.
 func (s *Server) buildResolver() {
-	// If indexer has a resolver, use it
 	if s.indexer != nil {
-		// The indexer builds its own resolver during FullIndex
 		return
 	}
 
@@ -75,7 +75,6 @@ func (s *Server) buildResolver() {
 	slog.Info("resolver built", "files", len(metas))
 }
 
-// extractTitle reads a markdown file and extracts its title.
 func (s *Server) extractTitle(f scanner.VaultFile) string {
 	fullPath := filepath.Join(s.vaultDir, filepath.FromSlash(f.Path))
 	content, err := os.ReadFile(fullPath)
@@ -89,7 +88,6 @@ func (s *Server) extractTitle(f scanner.VaultFile) string {
 	return doc.Title
 }
 
-// resolveFunc returns a function that resolves wikilink targets.
 func (s *Server) resolveFunc() parser.ResolveFunc {
 	return func(target string) (string, bool) {
 		if s.indexer != nil {
@@ -104,8 +102,10 @@ func (s *Server) resolveFunc() parser.ResolveFunc {
 	}
 }
 
-// ServeHTTP implements http.Handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "no-referrer")
 	s.mux.ServeHTTP(w, r)
 }
 
@@ -117,9 +117,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/backlinks", s.handleBacklinks)
 	s.mux.HandleFunc("/api/tags", s.handleTags)
 	s.mux.HandleFunc("/api/tag", s.handleTag)
+	s.mux.HandleFunc("/api/tag-tree", s.handleTagTree)
+	s.mux.HandleFunc("/api/canvas", s.handleCanvas)
+	s.mux.HandleFunc("/api/graph", s.handleGraph)
+	s.mux.HandleFunc("/api/dashboard", s.handleDashboard)
+	s.mux.HandleFunc("/api/vault-query", s.handleVaultQuery)
 	s.mux.HandleFunc("/api/properties", s.handleProperties)
 	s.mux.HandleFunc("/api/filter", s.handleFilter)
 	s.mux.HandleFunc("/assets", s.handleAssets)
+	s.mux.HandleFunc("/vendor/", vendorHandler())
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +144,6 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "scan failed", http.StatusInternalServerError)
 		return
 	}
-
 	tree := scanner.BuildTree(files)
 	writeJSON(w, http.StatusOK, tree)
 }
@@ -150,14 +155,12 @@ func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Security check
 	if err := security.ValidatePath(s.vaultDir, path); err != nil {
 		slog.Warn("path validation failed", "path", path, "error", err)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
-	// Read file
 	fullPath := filepath.Join(s.vaultDir, filepath.FromSlash(path))
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
@@ -170,7 +173,6 @@ func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse markdown
 	doc, err := parser.ParseDocument(string(content), path)
 	if err != nil {
 		slog.Error("parse failed", "path", path, "error", err)
@@ -178,10 +180,8 @@ func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve wikilinks in HTML
 	doc.HTML = parser.RenderWikiLinksInHTML(doc.HTML, s.resolveFunc())
 
-	// Add backlinks
 	if s.indexer != nil {
 		backlinks, err := s.indexer.GetBacklinks(path)
 		if err != nil {
@@ -276,6 +276,145 @@ func (s *Server) handleTag(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"items": files})
 }
 
+func (s *Server) handleTagTree(w http.ResponseWriter, r *http.Request) {
+	if s.indexer == nil {
+		http.Error(w, "index not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	tree, err := s.indexer.GetTagTree()
+	if err != nil {
+		slog.Error("tag tree query failed", "error", err)
+		http.Error(w, "tag tree error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": tree})
+}
+
+func (s *Server) handleCanvas(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		http.Error(w, "path parameter required", http.StatusBadRequest)
+		return
+	}
+
+	if err := security.ValidatePath(s.vaultDir, path); err != nil {
+		slog.Warn("canvas path validation failed", "path", path, "error", err)
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	fullPath := filepath.Join(s.vaultDir, filepath.FromSlash(path))
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		slog.Error("read canvas failed", "path", path, "error", err)
+		http.Error(w, "read error", http.StatusInternalServerError)
+		return
+	}
+
+	doc, err := parser.ParseCanvas(string(content), path)
+	if err != nil {
+		slog.Error("parse canvas failed", "path", path, "error", err)
+		http.Error(w, "invalid canvas JSON", http.StatusBadRequest)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, doc)
+}
+
+func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
+	if s.indexer == nil {
+		http.Error(w, "index not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	folder := r.URL.Query().Get("folder")
+	tag := r.URL.Query().Get("tag")
+	path := r.URL.Query().Get("path")
+	depth := 1
+	if d := r.URL.Query().Get("depth"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 {
+			depth = parsed
+		}
+	}
+	maxNodes := 500
+	if m := r.URL.Query().Get("max"); m != "" {
+		if parsed, err := strconv.Atoi(m); err == nil && parsed > 0 {
+			maxNodes = parsed
+		}
+	}
+
+	nodes, edges, err := s.indexer.GetGraph(folder, tag, path, depth, maxNodes)
+	if err != nil {
+		slog.Error("graph query failed", "error", err)
+		http.Error(w, "graph error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"nodes": nodes,
+		"edges": edges,
+	})
+}
+
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if s.indexer == nil {
+		http.Error(w, "index not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	data, err := s.indexer.GetDashboard()
+	if err != nil {
+		slog.Error("dashboard query failed", "error", err)
+		http.Error(w, "dashboard error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, data)
+}
+
+func (s *Server) handleVaultQuery(w http.ResponseWriter, r *http.Request) {
+	if s.indexer == nil {
+		http.Error(w, "index not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 64*1024))
+	if err != nil {
+		http.Error(w, "read error", http.StatusBadRequest)
+		return
+	}
+
+	q, err := parser.ParseVaultQuery(string(body))
+	if err != nil {
+		http.Error(w, "invalid query YAML", http.StatusBadRequest)
+		return
+	}
+
+	results, err := s.indexer.ExecuteVaultQuery(q)
+	if err != nil {
+		slog.Error("vault query failed", "error", err)
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"type":    q.Type,
+		"fields":  q.Fields,
+		"results": results,
+	})
+}
+
 func (s *Server) handleProperties(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
 	if path == "" {
@@ -336,7 +475,6 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 
 	fullPath := filepath.Join(s.vaultDir, filepath.FromSlash(path))
 
-	// Verify file exists
 	info, err := os.Stat(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -347,9 +485,12 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine content type
 	contentType := contentTypeFromExt(filepath.Ext(info.Name()))
 	w.Header().Set("Content-Type", contentType)
+	// SVG can contain scripts; serve as attachment to prevent XSS
+	if contentType == "image/svg+xml" {
+		w.Header().Set("Content-Disposition", "attachment; filename="+info.Name())
+	}
 	http.ServeFile(w, r, fullPath)
 }
 

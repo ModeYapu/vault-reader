@@ -36,13 +36,31 @@ func ValidatePath(vaultDir, requestedPath string) error {
 
 	// Build the full path and verify it's within vaultDir
 	fullPath := filepath.Join(vaultDir, cleaned)
-	absVault, err := filepath.Abs(vaultDir)
+
+	// Resolve symlinks to prevent symlink traversal attacks
+	absVault, err := filepath.EvalSymlinks(vaultDir)
 	if err != nil {
-		return fmt.Errorf("invalid vault dir: %w", err)
+		// EvalSymlinks fails if vaultDir doesn't exist; fall back to Abs
+		absVault, err = filepath.Abs(vaultDir)
+		if err != nil {
+			return fmt.Errorf("invalid vault dir: %w", err)
+		}
 	}
-	absFull, err := filepath.Abs(fullPath)
+
+	absFull, err := filepath.EvalSymlinks(fullPath)
 	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
+		// File may not exist yet; resolve parent and join the basename
+		parent := filepath.Dir(fullPath)
+		resolvedParent, err := filepath.EvalSymlinks(parent)
+		if err != nil {
+			// Fall back to Abs if parent also doesn't resolve
+			absFull, err = filepath.Abs(fullPath)
+			if err != nil {
+				return fmt.Errorf("invalid path: %w", err)
+			}
+		} else {
+			absFull = filepath.Join(resolvedParent, filepath.Base(fullPath))
+		}
 	}
 
 	if !strings.HasPrefix(absFull, absVault+string(filepath.Separator)) && absFull != absVault {

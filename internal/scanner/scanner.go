@@ -26,6 +26,10 @@ var (
 		".markdown": true,
 	}
 
+	canvasExts = map[string]bool{
+		".canvas": true,
+	}
+
 	assetExts = map[string]bool{
 		".png": true, ".jpg": true, ".jpeg": true, ".webp": true,
 		".gif": true, ".svg": true, ".pdf": true, ".txt": true,
@@ -78,7 +82,7 @@ func Scan(vaultDir string) ([]VaultFile, error) {
 
 		// Check file extension
 		ext := strings.ToLower(filepath.Ext(d.Name()))
-		if !markdownExts[ext] && !assetExts[ext] {
+		if !markdownExts[ext] && !assetExts[ext] && !canvasExts[ext] {
 			return nil
 		}
 
@@ -93,6 +97,7 @@ func Scan(vaultDir string) ([]VaultFile, error) {
 			Name:       d.Name(),
 			Ext:        ext,
 			IsMarkdown: markdownExts[ext],
+			IsCanvas:   canvasExts[ext],
 			Size:       info.Size(),
 			ModTime:    info.ModTime(),
 		})

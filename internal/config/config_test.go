@@ -10,9 +10,6 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Addr != ":3000" {
 		t.Errorf("expected default addr :3000, got %s", cfg.Addr)
 	}
-	if cfg.Readonly != true {
-		t.Error("expected readonly true by default")
-	}
 }
 
 func TestConfigFromArgs(t *testing.T) {
@@ -45,7 +42,7 @@ func TestConfigFromEnv(t *testing.T) {
 	defer os.Unsetenv("ADDR")
 
 	cfg := Default()
-	cfg.ApplyEnv()
+	cfg.ApplyEnv(false)
 
 	if cfg.VaultDir != "/env/vault" {
 		t.Errorf("expected vault /env/vault, got %s", cfg.VaultDir)

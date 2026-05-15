@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -417,6 +418,102 @@ type TagCount struct {
 	Count int    `json:"count"`
 }
 
+// TagTreeNode represents a node in the hierarchical tag tree.
+type TagTreeNode struct {
+	Name     string         `json:"name"`
+	FullName string         `json:"fullName"`
+	Count    int            `json:"count"`
+	Children []TagTreeNode  `json:"children,omitempty"`
+}
+
+// GetTagTree returns all tags organized into a tree structure based on "/" separators.
+func (ix *Indexer) GetTagTree() ([]TagTreeNode, error) {
+	rows, err := ix.db.Query(`
+		SELECT tag, COUNT(DISTINCT file_path) as count
+		FROM tags
+		GROUP BY tag
+		ORDER BY tag ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("tag tree query: %w", err)
+	}
+	defer rows.Close()
+
+	// type treeNode is used internally for building the tree
+	type treeKey struct {
+		name     string
+		fullName string
+	}
+	type internalNode struct {
+		count    int
+		children map[string]*internalNode
+	}
+
+	root := make(map[string]*internalNode)
+
+	for rows.Next() {
+		var tag string
+		var count int
+		if err := rows.Scan(&tag, &count); err != nil {
+			return nil, err
+		}
+
+		parts := strings.Split(tag, "/")
+		current := root
+		for i, part := range parts {
+			if _, ok := current[part]; !ok {
+				current[part] = &internalNode{children: make(map[string]*internalNode)}
+			}
+			node := current[part]
+			// If this is the last part, the count belongs to this node
+			if i == len(parts)-1 {
+				node.count = count
+			}
+			current = node.children
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Convert internal map to sorted []TagTreeNode
+	var buildTree func(m map[string]*internalNode, prefix string) []TagTreeNode
+	buildTree = func(m map[string]*internalNode, prefix string) []TagTreeNode {
+		if len(m) == 0 {
+			return nil
+		}
+		// Collect keys for deterministic ordering
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		sortStrings(keys)
+
+		nodes := make([]TagTreeNode, 0, len(m))
+		for _, k := range keys {
+			child := m[k]
+			fullName := k
+			if prefix != "" {
+				fullName = prefix + "/" + k
+			}
+			node := TagTreeNode{
+				Name:     k,
+				FullName: fullName,
+				Count:    child.count,
+				Children: buildTree(child.children, fullName),
+			}
+			nodes = append(nodes, node)
+		}
+		return nodes
+	}
+
+	return buildTree(root, ""), nil
+}
+
+// sortStrings sorts a string slice in place.
+func sortStrings(s []string) {
+	sort.Strings(s)
+}
+
 // GetFilesByTag returns file paths that have the given tag.
 func (ix *Indexer) GetFilesByTag(tag string) ([]TagFile, error) {
 	rows, err := ix.db.Query(`
@@ -552,6 +649,368 @@ func (ix *Indexer) GetBlocksByFile(filePath string) ([]BlockRef, error) {
 		blocks = append(blocks, b)
 	}
 	return blocks, rows.Err()
+}
+
+// GraphNode represents a node in the graph view.
+type GraphNode struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Path  string `json:"path"`
+	Group string `json:"group"`
+}
+
+// GraphEdge represents a directed edge between two graph nodes.
+type GraphEdge struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+}
+
+// GetGraph returns graph data (nodes and edges) based on resolved links.
+// folder, tag, path can be empty (no filter). depth and maxNodes limit the result.
+func (ix *Indexer) GetGraph(folder, tag, path string, depth, maxNodes int) ([]GraphNode, []GraphEdge, error) {
+	if maxNodes <= 0 {
+		maxNodes = 500
+	}
+	if depth <= 0 {
+		depth = 1
+	}
+
+	// Build base node set from files
+	nodeQuery := `SELECT path, title FROM files WHERE 1=1`
+	nodeArgs := []interface{}{}
+
+	if folder != "" {
+		nodeQuery += ` AND (path LIKE ? || '/%' OR path LIKE ?)`
+		nodeArgs = append(nodeArgs, folder+"/%", folder+"/%")
+	}
+	if tag != "" {
+		nodeQuery += ` AND path IN (SELECT file_path FROM tags WHERE tag = ?)`
+		nodeArgs = append(nodeArgs, tag)
+	}
+	if path != "" {
+		nodeQuery += ` AND path = ?`
+		nodeArgs = append(nodeArgs, path)
+	}
+	nodeQuery += ` ORDER BY path LIMIT ?`
+	nodeArgs = append(nodeArgs, maxNodes)
+
+	rows, err := ix.db.Query(nodeQuery, nodeArgs...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("graph nodes query: %w", err)
+	}
+	defer rows.Close()
+
+	nodeMap := make(map[string]GraphNode) // path -> node
+	for rows.Next() {
+		var p, title string
+		if err := rows.Scan(&p, &title); err != nil {
+			return nil, nil, err
+		}
+		parts := strings.Split(p, "/")
+		group := ""
+		if len(parts) > 1 {
+			group = parts[0]
+		}
+		nodeMap[p] = GraphNode{
+			ID:    p,
+			Title: title,
+			Path:  p,
+			Group: group,
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	// If path-based local graph, expand to include linked neighbors
+	if path != "" && depth > 1 {
+		ix.expandGraphNeighbors(nodeMap, path, depth-1, maxNodes)
+	}
+
+	// Build edges from resolved links
+	paths := make([]string, 0, len(nodeMap))
+	for p := range nodeMap {
+		paths = append(paths, p)
+	}
+
+	var edges []GraphEdge
+	if len(paths) > 0 {
+		edgeRows, err := ix.db.Query(`
+			SELECT DISTINCT from_path, target_path
+			FROM links
+			WHERE resolved = 1 AND target_path != ''
+			AND from_path != target_path`)
+		if err != nil {
+			return nil, nil, fmt.Errorf("graph edges query: %w", err)
+		}
+		defer edgeRows.Close()
+
+		seen := make(map[string]bool)
+		for edgeRows.Next() {
+			var src, tgt string
+			if err := edgeRows.Scan(&src, &tgt); err != nil {
+				return nil, nil, err
+			}
+			// Only include edges where both endpoints are in our node set
+			if nodeMap[src].ID != "" && nodeMap[tgt].ID != "" {
+				key := src + "->" + tgt
+				if !seen[key] {
+					seen[key] = true
+					edges = append(edges, GraphEdge{Source: src, Target: tgt})
+				}
+			}
+		}
+		if err := edgeRows.Err(); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	// Convert map to sorted slice
+	nodes := make([]GraphNode, 0, len(nodeMap))
+	for _, n := range nodeMap {
+		nodes = append(nodes, n)
+	}
+
+	return nodes, edges, nil
+}
+
+// DashboardData holds all sections for the dashboard page.
+type DashboardData struct {
+	Recent []TagFile  `json:"recent"`
+	Inbox  []TagFile  `json:"inbox"`
+	Active []TagFile  `json:"active"`
+	Debug  []TagFile  `json:"debug"`
+	Tags   []TagCount `json:"tags"`
+	Canvas []TagFile  `json:"canvas"`
+}
+
+// GetDashboard returns aggregated dashboard data.
+func (ix *Indexer) GetDashboard() (*DashboardData, error) {
+	data := &DashboardData{}
+
+	// Recent: files ordered by mtime desc, limit 10
+	rows, err := ix.db.Query(`
+		SELECT path, title FROM files
+		ORDER BY mtime DESC LIMIT 10`)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard recent: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var f TagFile
+		if err := rows.Scan(&f.Path, &f.Title); err != nil { continue }
+		data.Recent = append(data.Recent, f)
+	}
+
+	// Inbox: files in 00_Inbox
+	rows, err = ix.db.Query(`
+		SELECT path, title FROM files
+		WHERE path LIKE '00_Inbox/%'
+		ORDER BY mtime DESC LIMIT 10`)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard inbox: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var f TagFile
+		if err := rows.Scan(&f.Path, &f.Title); err != nil { continue }
+		data.Inbox = append(data.Inbox, f)
+	}
+
+	// Active: status = active
+	rows, err = ix.db.Query(`
+		SELECT DISTINCT p.file_path, f.title
+		FROM properties p
+		LEFT JOIN files f ON p.file_path = f.path
+		WHERE p.key = 'status' AND p.value = 'active'
+		ORDER BY p.file_path LIMIT 20`)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard active: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var f TagFile
+		if err := rows.Scan(&f.Path, &f.Title); err != nil { continue }
+		data.Active = append(data.Active, f)
+	}
+
+	// Debug: type = debug-note
+	rows, err = ix.db.Query(`
+		SELECT DISTINCT p.file_path, f.title
+		FROM properties p
+		LEFT JOIN files f ON p.file_path = f.path
+		WHERE p.key = 'type' AND p.value = 'debug-note'
+		ORDER BY p.file_path LIMIT 20`)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard debug: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var f TagFile
+		if err := rows.Scan(&f.Path, &f.Title); err != nil { continue }
+		data.Debug = append(data.Debug, f)
+	}
+
+	// Tags: top tags
+	data.Tags, _ = ix.GetTags()
+	if len(data.Tags) > 10 {
+		data.Tags = data.Tags[:10]
+	}
+
+	// Canvas: canvas files from scanner
+	canvasFiles, err := scanner.Scan(ix.vaultDir)
+	if err == nil {
+		for _, f := range canvasFiles {
+			if f.IsCanvas {
+				data.Canvas = append(data.Canvas, TagFile{Path: f.Path, Title: f.Name})
+			}
+		}
+	}
+
+	return data, nil
+}
+
+// QueryResultRow represents a single row from a vault query.
+type QueryResultRow struct {
+	Path   string            `json:"path"`
+	Title  string            `json:"title"`
+	Fields map[string]string `json:"fields"`
+}
+
+// ExecuteVaultQuery executes a parsed vault query and returns results.
+func (ix *Indexer) ExecuteVaultQuery(q *parser.VaultQuery) ([]QueryResultRow, error) {
+	// Build SQL query
+	args := []interface{}{}
+	whereClauses := []string{}
+
+	if q.From != "" {
+		whereClauses = append(whereClauses, "(f.path LIKE ? || '/%' OR f.path LIKE ?)")
+		args = append(args, q.From+"/%", q.From+"/%")
+	}
+
+	// Process where filters via properties
+	for key, value := range q.Where {
+		whereClauses = append(whereClauses, `f.path IN (SELECT file_path FROM properties WHERE key = ? AND value = ?)`)
+		args = append(args, key, value)
+	}
+
+	whereSQL := ""
+	if len(whereClauses) > 0 {
+		whereSQL = "WHERE " + joinStrings(whereClauses, " AND ")
+	}
+
+	orderBy := "f.mtime DESC"
+	if q.Sort != "" {
+		dir := "DESC"
+		if q.Order == "asc" {
+			dir = "ASC"
+		}
+		// Sort by property or mtime
+		if q.Sort == "updated" || q.Sort == "mtime" {
+			orderBy = "f.mtime " + dir
+		} else if q.Sort == "title" {
+			orderBy = "f.title " + dir
+		} else {
+			orderBy = "f.mtime " + dir
+		}
+	}
+
+	limit := 20
+	if q.Limit > 0 {
+		limit = q.Limit
+	}
+
+	query := `SELECT f.path, f.title FROM files f ` + whereSQL + ` ORDER BY ` + orderBy + ` LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := ix.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("vault query: %w", err)
+	}
+	defer rows.Close()
+
+	var results []QueryResultRow
+	for rows.Next() {
+		var path, title string
+		if err := rows.Scan(&path, &title); err != nil {
+			return nil, err
+		}
+
+		row := QueryResultRow{
+			Path:   path,
+			Title:  title,
+			Fields: make(map[string]string),
+		}
+
+		// Fetch requested fields from properties
+		if len(q.Fields) > 0 {
+			propRows, err := ix.db.Query(`SELECT key, value FROM properties WHERE file_path = ?`, path)
+			if err == nil {
+				for propRows.Next() {
+					var k, v string
+					if err := propRows.Scan(&k, &v); err != nil {
+						continue
+					}
+					row.Fields[k] = v
+				}
+				propRows.Close()
+			}
+		}
+
+		results = append(results, row)
+	}
+	return results, rows.Err()
+}
+
+// joinStrings joins strings with a separator.
+func joinStrings(ss []string, sep string) string {
+	return strings.Join(ss, sep)
+}
+
+// expandGraphNeighbors adds neighbors of a node to the node map, up to depth levels.
+func (ix *Indexer) expandGraphNeighbors(nodeMap map[string]GraphNode, centerPath string, depth, maxNodes int) {
+	if depth <= 0 || len(nodeMap) >= maxNodes {
+		return
+	}
+
+	// Find all links to/from centerPath
+	neighbors := make(map[string]bool)
+	rows, err := ix.db.Query(`
+		SELECT target_path FROM links WHERE from_path = ? AND resolved = 1 AND target_path != ''
+		UNION
+		SELECT from_path FROM links WHERE target_path = ? AND resolved = 1 AND from_path != ''`,
+		centerPath, centerPath)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			continue
+		}
+		if nodeMap[p].ID == "" && !neighbors[p] {
+			neighbors[p] = true
+		}
+	}
+
+	// Add neighbors
+	for p := range neighbors {
+		if len(nodeMap) >= maxNodes {
+			break
+		}
+		var title string
+		ix.db.QueryRow(`SELECT title FROM files WHERE path = ?`, p).Scan(&title)
+		parts := strings.Split(p, "/")
+		group := ""
+		if len(parts) > 1 {
+			group = parts[0]
+		}
+		nodeMap[p] = GraphNode{ID: p, Title: title, Path: p, Group: group}
+		// Recurse
+		ix.expandGraphNeighbors(nodeMap, p, depth-1, maxNodes)
+	}
 }
 
 // cleanFTSQuery sanitizes a search query for FTS5 MATCH.

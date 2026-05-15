@@ -19,7 +19,6 @@ type Watcher struct {
 	debounce  time.Duration
 	done      chan struct{}
 	mu        sync.Mutex
-	pending   bool
 	timer     *time.Timer
 }
 

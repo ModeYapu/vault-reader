@@ -84,6 +84,9 @@ func (r *Resolver) Resolve(target string) ResolveResult {
 	// Normalize: strip leading/trailing whitespace
 	target = strings.TrimSpace(target)
 
+	// Strip .md/.markdown extension for matching purposes, but keep for exact path lookup
+	targetNoExt := stripMdExt(target)
+
 	// 1. Exact relative path match
 	lower := strings.ToLower(target)
 	if idx, ok := r.byRelPath[lower]; ok {
@@ -102,7 +105,8 @@ func (r *Resolver) Resolve(target string) ResolveResult {
 	}
 
 	// 3. Normalized path match (path without .md)
-	if idx, ok := r.byNormPath[lower]; ok {
+	lowerNoExt := strings.ToLower(targetNoExt)
+	if idx, ok := r.byNormPath[lowerNoExt]; ok {
 		return ResolveResult{
 			Found:      true,
 			TargetPath: r.files[idx].Path,
@@ -110,9 +114,9 @@ func (r *Resolver) Resolve(target string) ResolveResult {
 	}
 
 	// Extract filename part (last segment if path-like)
-	namePart := target
-	if idx := strings.LastIndex(target, "/"); idx >= 0 {
-		namePart = target[idx+1:]
+	namePart := targetNoExt
+	if idx := strings.LastIndex(targetNoExt, "/"); idx >= 0 {
+		namePart = targetNoExt[idx+1:]
 	}
 	lowerName := strings.ToLower(namePart)
 
@@ -178,6 +182,17 @@ func (r *Resolver) Resolve(target string) ResolveResult {
 	}
 
 	return ResolveResult{Found: false}
+}
+
+// stripMdExt removes .md or .markdown extension from a path segment.
+func stripMdExt(s string) string {
+	if strings.HasSuffix(strings.ToLower(s), ".md") {
+		return s[:len(s)-3]
+	}
+	if strings.HasSuffix(strings.ToLower(s), ".markdown") {
+		return s[:len(s)-9]
+	}
+	return s
 }
 
 // BuildFileMeta extracts FileMeta from a vault file path and optional title.

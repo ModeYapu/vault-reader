@@ -10,6 +10,7 @@ type TreeNode struct {
 	Name     string      `json:"name"`
 	Path     string      `json:"path"`
 	Type     string      `json:"type"` // "dir" or "file"
+	IsCanvas bool        `json:"isCanvas,omitempty"`
 	Children []*TreeNode `json:"children,omitempty"`
 }
 
@@ -31,9 +32,10 @@ func BuildTree(files []VaultFile) *TreeNode {
 
 			if isFile {
 				current.Children = append(current.Children, &TreeNode{
-					Name: f.Name,
-					Path: f.Path,
-					Type: "file",
+					Name:     f.Name,
+					Path:     f.Path,
+					Type:     "file",
+					IsCanvas: f.IsCanvas,
 				})
 			} else {
 				// Find or create directory

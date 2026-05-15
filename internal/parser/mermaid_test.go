@@ -13,7 +13,7 @@ func TestParseDocumentWithMermaid(t *testing.T) {
 		t.Fatalf("ParseDocument failed: %v", err)
 	}
 
-	// Mermaid code block should be preserved with language-mermaid class
+	// Mermaid code block should have language-mermaid class
 	if !strings.Contains(doc.HTML, "language-mermaid") {
 		t.Errorf("expected language-mermaid class in HTML, got: %s", doc.HTML)
 	}
@@ -46,7 +46,7 @@ func TestParseDocumentMermaidAndNormalCode(t *testing.T) {
 		t.Fatalf("ParseDocument failed: %v", err)
 	}
 
-	// Both should be present
+	// Both should have their language classes
 	if !strings.Contains(doc.HTML, "language-go") {
 		t.Error("expected language-go class")
 	}

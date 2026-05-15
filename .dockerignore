@@ -12,23 +12,34 @@ bin/
 # Data directory
 .vault-reader-data/
 
-# Test vault
+# Test vault (mount at runtime)
 test-vault/
-Assets/
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+.claude/
 
 # OS
 .DS_Store
 Thumbs.db
-desktop.ini
 
-# Env
-.env
+# Git
+.git/
+
+# Docs and plans (not needed in image)
+*.md
+!README.md
+plan.md
+plan2.md
+task.md
+CHANGELOG.md
+
+# Web assets (already embedded via go:embed)
+web/
+Assets/
 
 # Misc
 tmp_note.json

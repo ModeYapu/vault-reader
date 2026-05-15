@@ -261,3 +261,36 @@ func TestVaultFileHasModTime(t *testing.T) {
 		t.Error("ModTime should be set")
 	}
 }
+
+func TestScanCanvasFiles(t *testing.T) {
+	vaultDir := createTestVault(t)
+
+	// Add a .canvas file
+	canvasContent := `{"nodes":[{"id":"n1","type":"text","text":"Hello","x":0,"y":0,"width":300,"height":200}],"edges":[]}`
+	canvasPath := filepath.Join(vaultDir, "30_Dashboard", "知识地图.canvas")
+	os.WriteFile(canvasPath, []byte(canvasContent), 0o644)
+
+	files, err := Scan(vaultDir)
+	if err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+
+	found := false
+	for _, f := range files {
+		if f.Name == "知识地图.canvas" {
+			found = true
+			if !f.IsCanvas {
+				t.Error("canvas file should have IsCanvas=true")
+			}
+			if f.IsMarkdown {
+				t.Error("canvas file should not be marked as markdown")
+			}
+			if f.Ext != ".canvas" {
+				t.Errorf("expected ext .canvas, got %s", f.Ext)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected to find 知识地图.canvas")
+	}
+}

@@ -6,9 +6,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/yuin/goldmark"
+	highlighting "github.com/yuin/goldmark-highlighting/v2"
+	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/renderer/html"
+	"github.com/yuin/goldmark/util"
 )
 
 // ParsedDocument is the result of parsing a markdown file.
@@ -30,6 +33,25 @@ var md = goldmark.New(
 	goldmark.WithExtensions(
 		extension.NewTable(),
 		extension.Strikethrough,
+		highlighting.NewHighlighting(
+			highlighting.WithStyle("github"),
+			highlighting.WithFormatOptions(
+				chromahtml.WithClasses(true),
+				chromahtml.PreventSurroundingPre(true),
+			),
+			highlighting.WithWrapperRenderer(func(w util.BufWriter, c highlighting.CodeBlockContext, entering bool) {
+				lang, hasLang := c.Language()
+				if entering {
+					if hasLang {
+						w.WriteString(`<pre class="chroma language-` + string(lang) + `"><code>`)
+					} else {
+						w.WriteString(`<pre><code>`)
+					}
+				} else {
+					w.WriteString(`</code></pre>`)
+				}
+			}),
+		),
 	),
 	goldmark.WithParserOptions(
 		parser.WithAutoHeadingID(),

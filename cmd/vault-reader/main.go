@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"vault-reader/internal/config"
 	"vault-reader/internal/indexer"
@@ -62,11 +66,35 @@ func main() {
 	}
 
 	// Create server with indexer
-	srv := server.New(cfg.VaultDir, server.WithIndexer(ix))
+	handler := server.New(cfg.VaultDir, server.WithIndexer(ix))
 
-	slog.Info("listening", "addr", cfg.Addr)
-	if err := http.ListenAndServe(cfg.Addr, srv); err != nil {
-		slog.Error("server failed", "error", err)
-		os.Exit(1)
+	httpSrv := &http.Server{
+		Addr:         cfg.Addr,
+		Handler:      handler,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
+
+	// Graceful shutdown on signal
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		slog.Info("listening", "addr", cfg.Addr)
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	<-ctx.Done()
+	slog.Info("shutting down...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("shutdown error", "error", err)
+	}
+	slog.Info("server stopped")
 }
