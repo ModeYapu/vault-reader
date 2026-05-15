@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -125,6 +126,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/vault-query", s.handleVaultQuery)
 	s.mux.HandleFunc("/api/properties", s.handleProperties)
 	s.mux.HandleFunc("/api/filter", s.handleFilter)
+	s.mux.HandleFunc("/api/block", s.handleBlock)
+	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/assets", s.handleAssets)
 	s.mux.HandleFunc("/vendor/", vendorHandler())
 }
@@ -601,8 +604,7 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	// SVG can contain scripts; serve as attachment to prevent XSS
 	if contentType == "image/svg+xml" {
-		safeName := strings.ReplaceAll(info.Name(), "\"", "\\\"")
-		w.Header().Set("Content-Disposition", "attachment; filename=\""+safeName+"\"")
+				w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(info.Name()))
 	}
 	http.ServeFile(w, r, fullPath)
 }
@@ -635,4 +637,41 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Error("json encode error", "error", err)
 	}
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("ok"))
+}
+
+func (s *Server) handleBlock(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.indexer == nil {
+		http.Error(w, "index not available", http.StatusServiceUnavailable)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "id parameter required", http.StatusBadRequest)
+		return
+	}
+	block, err := s.indexer.GetBlock(id)
+	if err != nil {
+		slog.Error("block query failed", "id", id, "error", err)
+		http.Error(w, "block error", http.StatusInternalServerError)
+		return
+	}
+	if block == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, block)
 }

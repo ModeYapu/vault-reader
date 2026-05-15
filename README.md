@@ -7,7 +7,7 @@ A lightweight, read-only Obsidian Vault web reader built with Go.
 ### Core
 - Directory tree with Explorer sidebar
 - Markdown rendering with full syntax support
-- Full-text search (SQLite FTS5)
+- Full-text search (SQLite FTS5, CJK support)
 - Backlinks
 - Chinese filename and space-in-path support
 - Dark/light theme
@@ -41,23 +41,24 @@ A lightweight, read-only Obsidian Vault web reader built with Go.
 
 ```bash
 # Build
-go build -o vault-reader ./cmd/vault-reader/
+go build -o vault-reader ./cmd/vault-reader
 
 # Run
-./vault-reader -vault /path/to/your/vault -port 8080
+./vault-reader --vault /path/to/your/vault
 
 # Open
-open http://localhost:8080
+open http://localhost:3000
 ```
 
 ## CLI Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-vault` | required | Path to Obsidian Vault |
-| `-port` | `8080` | HTTP port |
-| `-data` | `.vault-reader-data` | Data directory for index |
-| `-no-index` | false | Disable SQLite indexing |
+| `--vault` | required | Path to Obsidian Vault |
+| `--addr` | `:3000` | Listen address |
+| `--data` | `<vault>/.vault-reader-data` | Data directory for index |
+
+Environment variables: `VAULT_DIR`, `DATA_DIR`, `ADDR`
 
 ## Docker
 
@@ -65,7 +66,7 @@ open http://localhost:8080
 docker build -t vault-reader .
 
 docker run -d \
-  -p 8080:8080 \
+  -p 3000:3000 \
   -v /path/to/vault:/vault:ro \
   -v vault-data:/data \
   vault-reader
@@ -87,8 +88,10 @@ docker run -d \
 | `GET /api/canvas?path=` | GET | Canvas JSON data |
 | `GET /api/graph` | GET | Graph data |
 | `GET /api/dashboard` | GET | Dashboard data |
+| `GET /api/block?id=` | GET | Block reference data |
 | `POST /api/vault-query` | POST | Execute vault query |
 | `GET /assets?path=` | GET | Serve vault asset |
+| `GET /health` | GET | Health check |
 
 ## Vault Query Syntax
 

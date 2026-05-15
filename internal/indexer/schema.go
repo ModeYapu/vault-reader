@@ -45,10 +45,11 @@ CREATE TABLE IF NOT EXISTS headings (
 CREATE VIRTUAL TABLE IF NOT EXISTS file_fts USING fts5(
   title,
   path,
-  content
+  content,
+  tokenize="unicode61 categories 'L* N* Co'"
 );
 
-CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
+CREATE INDEX IF NOT EXISTS idx_links_from_resolved ON links(from_path, resolved, target_path);
 CREATE INDEX IF NOT EXISTS idx_links_from ON links(from_path);
 CREATE INDEX IF NOT EXISTS idx_links_target ON links(target_path);
 CREATE INDEX IF NOT EXISTS idx_tags_file ON tags(file_path);

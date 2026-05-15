@@ -4,6 +4,57 @@ All notable changes to vault-reader are documented here.
 
 ## [0.2.0] - 2026-05-15
 
+### Security
+
+- Path traversal validation for `/api/properties` and `/api/backlinks` endpoints
+- CSP security header on all responses
+- Mermaid diagrams use `securityLevel: 'strict'` to prevent XSS
+- Canvas URL filtering blocks `javascript:`, `data:`, `vbscript:` schemes
+- SVG Content-Disposition uses RFC 5987 `filename*=UTF-8''` encoding
+- File size limit (10MB) check before reading notes and canvas files
+- Vault Query limit capped at 200 results
+
+### Performance
+
+- Single-pass parsing in `FullIndex()` with `docCache` — eliminates double file parse
+- Batch SQL queries replace N+1 patterns in `ExecuteVaultQuery` and `expandGraphNeighbors`
+- `sync.RWMutex` for resolver access, `sync.Mutex` for FullIndex serialization
+- FTS5 CJK tokenization via `unicode61 categories 'L* N* Co'`
+- AND-style search (space-separated terms) instead of OR
+- Composite index `idx_links_from_resolved` for faster backlink lookups
+
+### Added
+
+- `GET /health` endpoint for health checks
+- `GET /api/block?id=` endpoint for block reference data
+- Version embedding via `-ldflags "-X main.version=..."`
+- GitHub Actions release workflow (Linux amd64 + arm64, triggered by `v*` tags)
+- MIT LICENSE file
+- Configurable dashboard queries (inbox folder, active/debug property key/value)
+
+### Fixed
+
+- `main()` refactored to `run() error` pattern — deferred cleanup now executes on failure
+- `html.EscapeString` replaces manual escapeHTML in wikilink renderer
+- Dockerfile HEALTHCHECK uses `/health` endpoint
+- Dockerfile `golang:1.25-alpine` matches `go.mod`
+- `go.mod` version format corrected (`go 1.25.0`)
+- `deploy.sh` DATA_DIR placed outside vault for read-only mount compatibility
+- README CLI flags corrected (`--vault`, `--addr`, `--data`)
+
+### Changed
+
+- Dashboard queries are configurable instead of hardcoded
+- `cleanFTSQuery` uses package-level `ftsSanitizeReplacer`
+- Removed unused `BaseURL` config flag
+- Removed dead `splitPath` function from scanner
+- Removed unused `CleanPath` from security package
+- Removed unused `Headings` field from resolver `FileMeta`
+
+---
+
+## [0.1.0] - 2026-05-14
+
 ### Added
 
 **Tag Tree (Milestone 3)**
@@ -49,7 +100,7 @@ All notable changes to vault-reader are documented here.
 
 ---
 
-## [0.1.0] - 2026-05-14
+## [0.0.1] - 2026-05-13
 
 ### Added
 

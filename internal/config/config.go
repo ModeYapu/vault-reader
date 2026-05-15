@@ -12,7 +12,6 @@ type Config struct {
 	VaultDir string
 	DataDir  string
 	Addr     string
-	BaseURL  string
 }
 
 // Default returns a Config with sensible defaults.
@@ -31,7 +30,6 @@ func ParseArgs(args []string) (*Config, error) {
 	fs.StringVar(&cfg.VaultDir, "vault", "", "Path to Obsidian Vault directory")
 	fs.StringVar(&cfg.DataDir, "data", "", "Path to data directory for index database")
 	fs.Var(&stringFlag{target: &cfg.Addr, set: &addrSet}, "addr", "Listen address")
-	fs.StringVar(&cfg.BaseURL, "base-url", "", "Optional base URL for reverse proxy")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -62,9 +60,6 @@ func (c *Config) ApplyEnv(addrSet bool) {
 	}
 	if v := os.Getenv("ADDR"); v != "" && !addrSet {
 		c.Addr = v
-	}
-	if v := os.Getenv("BASE_URL"); v != "" && c.BaseURL == "" {
-		c.BaseURL = v
 	}
 }
 

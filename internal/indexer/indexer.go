@@ -28,6 +28,7 @@ type Indexer struct {
 	resolver   *resolver.Resolver
 	resolverMu sync.RWMutex
 	indexMu    sync.Mutex // serializes FullIndex calls
+	DashConfig DashboardConfig
 }
 
 // New creates or opens an indexer database at the given path.
@@ -115,14 +116,18 @@ func (ix *Indexer) FullIndex() error {
 		return fmt.Errorf("scan vault: %w", err)
 	}
 
-	// First pass: parse all markdown files to get titles and aliases
+	// Single pass: parse all markdown files, cache docs for reuse
 	metas := make([]resolver.FileMeta, 0, len(files))
+	docCache := make(map[string]*parser.ParsedDocument)
 	for _, f := range files {
 		if !f.IsMarkdown {
 			continue
 		}
-		meta := ix.parseFileMeta(f)
+		meta, doc := ix.parseAndCache(f)
 		metas = append(metas, meta)
+		if doc != nil {
+			docCache[f.Path] = doc
+		}
 	}
 
 	// Start transaction
@@ -149,13 +154,17 @@ func (ix *Indexer) FullIndex() error {
 	localResolver := ix.resolver
 	ix.resolverMu.RUnlock()
 
-	// Second pass: index all markdown files
+	// Second pass: index all markdown files using cached docs
 	now := time.Now().Unix()
 	for _, f := range files {
 		if !f.IsMarkdown {
 			continue
 		}
-		if err := ix.indexFileWithResolver(tx, localResolver, f, now); err != nil {
+		doc := docCache[f.Path]
+		if doc == nil {
+			continue
+		}
+		if err := ix.indexFileWithResolver(tx, localResolver, f, doc, now); err != nil {
 			slog.Error("failed to index file", "path", f.Path, "error", err)
 		}
 	}
@@ -169,18 +178,18 @@ func (ix *Indexer) FullIndex() error {
 	return nil
 }
 
-func (ix *Indexer) parseFileMeta(f scanner.VaultFile) resolver.FileMeta {
+// parseAndCache reads and parses a markdown file, returning both the meta and doc.
+func (ix *Indexer) parseAndCache(f scanner.VaultFile) (resolver.FileMeta, *parser.ParsedDocument) {
 	fullPath := filepath.Join(ix.vaultDir, filepath.FromSlash(f.Path))
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
-		return resolver.BuildFileMeta(f.Path, "")
+		return resolver.BuildFileMeta(f.Path, ""), nil
 	}
 	doc, err := parser.ParseDocument(string(content), f.Path)
 	if err != nil {
-		return resolver.BuildFileMeta(f.Path, "")
+		return resolver.BuildFileMeta(f.Path, ""), nil
 	}
 
-	// Extract aliases from frontmatter
 	var aliases []string
 	if a, ok := doc.Frontmatter["aliases"]; ok {
 		switch v := a.(type) {
@@ -197,20 +206,11 @@ func (ix *Indexer) parseFileMeta(f scanner.VaultFile) resolver.FileMeta {
 
 	meta := resolver.BuildFileMeta(f.Path, doc.Title)
 	meta.Aliases = aliases
-	return meta
+	return meta, doc
 }
 
-func (ix *Indexer) indexFileWithResolver(tx *sql.Tx, res *resolver.Resolver, f scanner.VaultFile, now int64) error {
-	fullPath := filepath.Join(ix.vaultDir, filepath.FromSlash(f.Path))
-	content, err := os.ReadFile(fullPath)
-	if err != nil {
-		return err
-	}
-
-	doc, err := parser.ParseDocument(string(content), f.Path)
-	if err != nil {
-		return err
-	}
+func (ix *Indexer) indexFileWithResolver(tx *sql.Tx, res *resolver.Resolver, f scanner.VaultFile, doc *parser.ParsedDocument, now int64) error {
+	var err error
 
 	// Serialize frontmatter
 	fmJSON, _ := json.Marshal(doc.Frontmatter)
@@ -283,8 +283,8 @@ func (ix *Indexer) indexFileWithResolver(tx *sql.Tx, res *resolver.Resolver, f s
 	for key, val := range doc.Frontmatter {
 		if err := insertProperty(tx, f.Path, key, val); err != nil {
 			return fmt.Errorf("insert property %s: %w", key, err)
+			}
 		}
-	}
 
 		// Insert blocks
 		for _, b := range doc.Blocks {
@@ -295,8 +295,8 @@ func (ix *Indexer) indexFileWithResolver(tx *sql.Tx, res *resolver.Resolver, f s
 			}
 		}
 
-	return nil
-}
+		return nil
+	}
 
 // insertProperty inserts a frontmatter key-value pair into the properties table.
 func insertProperty(tx *sql.Tx, filePath, key string, val any) error {
@@ -829,6 +829,15 @@ func (ix *Indexer) GetGraph(folder, tag, path string, depth, maxNodes int) ([]Gr
 	return nodes, edges, nil
 }
 
+// DashboardConfig holds configurable dashboard section definitions.
+type DashboardConfig struct {
+	InboxFolder string // default: "00_Inbox"
+	ActiveKey   string // default: "status"
+	ActiveValue string // default: "active"
+	DebugKey    string // default: "type"
+	DebugValue  string // default: "debug-note"
+}
+
 // DashboardData holds all sections for the dashboard page.
 type DashboardData struct {
 	Recent []TagFile  `json:"recent"`
@@ -860,11 +869,14 @@ func (ix *Indexer) GetDashboard() (*DashboardData, error) {
 		data.Recent = append(data.Recent, f)
 	}
 
-	// Inbox: files in 00_Inbox
+	inboxFolder := ix.DashConfig.InboxFolder
+	if inboxFolder == "" {
+		inboxFolder = "00_Inbox"
+	}
 	inboxRows, err := ix.db.Query(`
 		SELECT path, title FROM files
-		WHERE path LIKE '00_Inbox/%'
-		ORDER BY mtime DESC LIMIT 10`)
+		WHERE path LIKE ? || '/%'
+		ORDER BY mtime DESC LIMIT 10`, inboxFolder)
 	if err != nil {
 		return nil, fmt.Errorf("dashboard inbox: %w", err)
 	}
@@ -878,13 +890,20 @@ func (ix *Indexer) GetDashboard() (*DashboardData, error) {
 		data.Inbox = append(data.Inbox, f)
 	}
 
-	// Active: status = active
+	activeKey := ix.DashConfig.ActiveKey
+	if activeKey == "" {
+		activeKey = "status"
+	}
+	activeVal := ix.DashConfig.ActiveValue
+	if activeVal == "" {
+		activeVal = "active"
+	}
 	activeRows, err := ix.db.Query(`
 		SELECT DISTINCT p.file_path, f.title
 		FROM properties p
 		LEFT JOIN files f ON p.file_path = f.path
-		WHERE p.key = 'status' AND p.value = 'active'
-		ORDER BY p.file_path LIMIT 20`)
+		WHERE p.key = ? AND p.value = ?
+		ORDER BY p.file_path LIMIT 20`, activeKey, activeVal)
 	if err != nil {
 		return nil, fmt.Errorf("dashboard active: %w", err)
 	}
@@ -898,13 +917,20 @@ func (ix *Indexer) GetDashboard() (*DashboardData, error) {
 		data.Active = append(data.Active, f)
 	}
 
-	// Debug: type = debug-note
+	debugKey := ix.DashConfig.DebugKey
+	if debugKey == "" {
+		debugKey = "type"
+	}
+	debugVal := ix.DashConfig.DebugValue
+	if debugVal == "" {
+		debugVal = "debug-note"
+	}
 	debugRows, err := ix.db.Query(`
 		SELECT DISTINCT p.file_path, f.title
 		FROM properties p
 		LEFT JOIN files f ON p.file_path = f.path
-		WHERE p.key = 'type' AND p.value = 'debug-note'
-		ORDER BY p.file_path LIMIT 20`)
+		WHERE p.key = ? AND p.value = ?
+		ORDER BY p.file_path LIMIT 20`, debugKey, debugVal)
 	if err != nil {
 		return nil, fmt.Errorf("dashboard debug: %w", err)
 	}

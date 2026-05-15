@@ -6,7 +6,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /vault-reader ./cmd/vault-reader
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /vault-reader ./cmd/vault-reader
 
 # Stage 2: Runtime
 FROM alpine:3.20
@@ -21,6 +24,6 @@ USER vaultreader
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-    CMD wget -qO- http://localhost:3000/ || exit 1
+    CMD wget -qO- http://localhost:3000/health || exit 1
 
 ENTRYPOINT ["vault-reader"]

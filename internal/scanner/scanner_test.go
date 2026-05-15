@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -221,7 +222,7 @@ func TestTreeNestedFiles(t *testing.T) {
 }
 
 func containsIgnoredPrefix(path, prefix string) bool {
-	parts := splitPath(path)
+	parts := strings.Split(filepath.ToSlash(path), "/")
 	for _, p := range parts[:len(parts)-1] {
 		if p == prefix {
 			return true

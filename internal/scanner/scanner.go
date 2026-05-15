@@ -107,25 +107,3 @@ func Scan(vaultDir string) ([]VaultFile, error) {
 
 	return files, err
 }
-
-func splitPath(p string) []string {
-	if p == "." {
-		return nil
-	}
-	var parts []string
-	current := ""
-	for _, ch := range p {
-		if ch == '/' || ch == '\\' {
-			if current != "" {
-				parts = append(parts, current)
-				current = ""
-			}
-		} else {
-			current += string(ch)
-		}
-	}
-	if current != "" {
-		parts = append(parts, current)
-	}
-	return parts
-}

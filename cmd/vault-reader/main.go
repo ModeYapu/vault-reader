@@ -15,6 +15,9 @@ import (
 	"vault-reader/internal/server"
 )
 
+// version is set via -ldflags "-X main.version=..." at build time.
+var version = "dev"
+
 func main() {
 	if err := run(); err != nil {
 		slog.Error("fatal error", "error", err)
@@ -50,6 +53,7 @@ func run() error {
 	}
 
 	slog.Info("starting vault-reader",
+		"version", version,
 		"vault", cfg.VaultDir,
 		"data", cfg.DataDir,
 		"addr", cfg.Addr,

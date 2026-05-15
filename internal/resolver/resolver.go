@@ -20,7 +20,6 @@ type FileMeta struct {
 	Title          string   // from frontmatter or first heading
 	NormalizedPath string   // path without .md extension
 	Aliases        []string // from frontmatter aliases field
-	Headings       []string // heading texts (reserved for future use)
 }
 
 // Resolver resolves wikilink targets to actual vault file paths.

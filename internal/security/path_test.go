@@ -60,25 +60,6 @@ func TestPathTraversalBlocked(t *testing.T) {
 	}
 }
 
-func TestCleanPath(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"notes/test.md", "notes/test.md"},
-		{"notes/../test.md", "test.md"},
-		{"notes/./test.md", "notes/test.md"},
-		{"//notes//test.md", "/notes/test.md"},
-	}
-
-	for _, tt := range tests {
-		got := CleanPath(tt.input)
-		if got != tt.expected {
-			t.Errorf("CleanPath(%q) = %q, want %q", tt.input, got, tt.expected)
-		}
-	}
-}
-
 func TestUNCPathsBlocked(t *testing.T) {
 	vaultDir := filepath.Join(t.TempDir(), "vault")
 	os.MkdirAll(vaultDir, 0o755)

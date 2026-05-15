@@ -6,7 +6,7 @@ set -euo pipefail
 
 VAULT_DIR="${1:-/opt/obsidian-vault}"
 INSTALL_DIR="/opt/vault-reader"
-DATA_DIR="${VAULT_DIR}/.vault-reader-data"
+DATA_DIR="/opt/vault-reader-data"
 SERVICE_USER="vaultreader"
 
 echo "=== vault-reader 部署 ==="

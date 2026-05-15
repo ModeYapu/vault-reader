@@ -85,26 +85,6 @@ func TestConfigDefaultDataDir(t *testing.T) {
 	}
 }
 
-func TestConfigBaseURL(t *testing.T) {
-	t.Setenv("BASE_URL", "/prefix")
-	cfg := Default()
-	cfg.ApplyEnv(false)
-	if cfg.BaseURL != "/prefix" {
-		t.Errorf("expected base URL /prefix, got %s", cfg.BaseURL)
-	}
-}
-
-func TestConfigBaseURLFromArgs(t *testing.T) {
-	args := []string{"--vault", "/v", "--base-url", "/app"}
-	cfg, err := ParseArgs(args)
-	if err != nil {
-		t.Fatalf("ParseArgs failed: %v", err)
-	}
-	if cfg.BaseURL != "/app" {
-		t.Errorf("expected base URL /app, got %s", cfg.BaseURL)
-	}
-}
-
 func TestConfigInvalidFlag(t *testing.T) {
 	args := []string{"--unknown-flag"}
 	_, err := ParseArgs(args)

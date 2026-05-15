@@ -19,9 +19,10 @@ jobs:
 
       - name: Build binaries
         run: |
+          VERSION="${GITHUB_REF_NAME}"
           for GOARCH in amd64 arm64; do
             CGO_ENABLED=0 GOOS=linux GOARCH=$GOARCH \
-              go build -trimpath -ldflags="-s -w" \
+              go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
               -o vault-reader-linux-$GOARCH ./cmd/vault-reader
             tar czf vault-reader-linux-$GOARCH.tar.gz \
               vault-reader-linux-$GOARCH \

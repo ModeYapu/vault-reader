@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"html"
 	"regexp"
 	"strings"
 )
@@ -256,11 +257,7 @@ func isInSkipRange(pos int, ranges [][2]int) bool {
 }
 
 func escapeHTML(s string) string {
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, "<", "&lt;")
-	s = strings.ReplaceAll(s, ">", "&gt;")
-	s = strings.ReplaceAll(s, `"`, "&quot;")
-	return s
+	return html.EscapeString(s)
 }
 
 func encodeURIComponent(s string) string {

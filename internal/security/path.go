@@ -2,7 +2,6 @@ package security
 
 import (
 	"fmt"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -72,9 +71,4 @@ func ValidatePath(vaultDir, requestedPath string) error {
 	}
 
 	return nil
-}
-
-// CleanPath normalizes a path by cleaning it using forward slashes (web-safe).
-func CleanPath(p string) string {
-	return path.Clean(p)
 }
