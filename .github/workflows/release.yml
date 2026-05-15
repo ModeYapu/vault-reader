@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build binaries
+        run: |
+          for GOARCH in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$GOARCH \
+              go build -trimpath -ldflags="-s -w" \
+              -o vault-reader-linux-$GOARCH ./cmd/vault-reader
+            tar czf vault-reader-linux-$GOARCH.tar.gz \
+              vault-reader-linux-$GOARCH \
+              scripts/install-service.sh \
+              deploy.sh \
+              Dockerfile \
+              docker-compose.yml
+          done
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: vault-reader-linux-*.tar.gz
+          generate_release_notes: true
