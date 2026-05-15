@@ -14,7 +14,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
 # Stage 2: Runtime
 FROM alpine:3.20
 
-RUN apk add --no-cache ca-certificates tzdata \
+RUN apk add --no-cache ca-certificates tzdata wget \
     && adduser -D -u 1000 vaultreader
 
 COPY --from=builder --chown=1000:1000 /vault-reader /usr/local/bin/vault-reader

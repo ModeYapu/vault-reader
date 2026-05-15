@@ -152,7 +152,7 @@ func TestRenderWikiLinkBlockRef(t *testing.T) {
 		return "", false
 	}
 
-	result := RenderWikiLinksInHTML(html, resolve)
+	result := RenderWikiLinksInHTML(html, resolve, "")
 	if !strings.Contains(result, "#block-abc123") {
 		t.Errorf("expected #block-abc123 in href, got: %s", result)
 	}
@@ -167,7 +167,7 @@ func TestRenderWikiLinkBlockRefBroken(t *testing.T) {
 		return "", false
 	}
 
-	result := RenderWikiLinksInHTML(html, resolve)
+	result := RenderWikiLinksInHTML(html, resolve, "")
 	if !strings.Contains(result, "broken-link") {
 		t.Errorf("expected broken-link class, got: %s", result)
 	}

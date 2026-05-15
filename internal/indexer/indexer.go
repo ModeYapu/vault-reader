@@ -137,11 +137,6 @@ func (ix *Indexer) FullIndex() error {
 	}
 	defer tx.Rollback()
 
-	// Update resolver after transaction starts, keeping resolver and DB in sync
-	ix.resolverMu.Lock()
-	ix.resolver = resolver.New(metas)
-	ix.resolverMu.Unlock()
-
 	// Clear existing data
 	for _, table := range []string{"files", "links", "tags", "headings", "properties", "blocks", "file_fts"} {
 		if _, err := tx.Exec("DELETE FROM " + table); err != nil {
@@ -149,10 +144,8 @@ func (ix *Indexer) FullIndex() error {
 		}
 	}
 
-	// Capture resolver snapshot for the indexing loop
-	ix.resolverMu.RLock()
-	localResolver := ix.resolver
-	ix.resolverMu.RUnlock()
+	// Build local resolver for wikilink resolution during indexing
+	localResolver := resolver.New(metas)
 
 	// Second pass: index all markdown files using cached docs
 	now := time.Now().Unix()
@@ -172,6 +165,11 @@ func (ix *Indexer) FullIndex() error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
+
+	// Update resolver only after successful commit
+	ix.resolverMu.Lock()
+	ix.resolver = localResolver
+	ix.resolverMu.Unlock()
 
 	elapsed := time.Since(start)
 	slog.Info("full index complete", "files", len(metas), "elapsed", elapsed)

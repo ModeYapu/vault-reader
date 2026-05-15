@@ -241,14 +241,7 @@ func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	doc.HTML = parser.RenderWikiLinksInHTML(doc.HTML, s.resolveFunc())
-
-	// Prefix absolute API paths if running under a subpath
-	if s.prefix != "" {
-		doc.HTML = strings.ReplaceAll(doc.HTML, `href="/api/`, `href="`+s.prefix+`/api/`)
-		doc.HTML = strings.ReplaceAll(doc.HTML, `src="/assets`, `src="`+s.prefix+`/assets`)
-		doc.HTML = strings.ReplaceAll(doc.HTML, `href="/assets`, `href="`+s.prefix+`/assets`)
-	}
+	doc.HTML = parser.RenderWikiLinksInHTML(doc.HTML, s.resolveFunc(), s.prefix)
 
 	if s.indexer != nil {
 		backlinks, err := s.indexer.GetBacklinks(path)

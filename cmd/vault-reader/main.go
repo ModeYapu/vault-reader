@@ -110,11 +110,13 @@ func run() error {
 	}()
 
 	// Wait for either a shutdown signal or a server error
+	var runErr error
 	select {
 	case <-ctx.Done():
 		slog.Info("shutting down...")
 	case err := <-serverErr:
 		slog.Error("server exited unexpectedly", "error", err)
+		runErr = err
 		stop() // release signal resources
 	}
 
@@ -124,5 +126,5 @@ func run() error {
 		slog.Error("shutdown error", "error", err)
 	}
 	slog.Info("server stopped")
-	return nil
+	return runErr
 }

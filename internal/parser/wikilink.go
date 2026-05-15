@@ -77,7 +77,7 @@ type ResolveFunc func(target string) (resolvedPath string, found bool)
 
 // RenderWikiLinksInHTML replaces [[wikilinks]] in already-rendered HTML with proper HTML elements.
 // It escapes wikilinks that were rendered inside <code> or <pre> blocks.
-func RenderWikiLinksInHTML(html string, resolve ResolveFunc) string {
+func RenderWikiLinksInHTML(html string, resolve ResolveFunc, prefix string) string {
 	// Collect positions inside <code> and <pre> blocks to skip
 	skipRanges := findCodeRanges(html)
 
@@ -105,7 +105,7 @@ func RenderWikiLinksInHTML(html string, resolve ResolveFunc) string {
 		link := parseWikiLinkInner(inner, isEmbed)
 
 		// Render the replacement
-		replacement := renderLinkHTML(link, resolve)
+		replacement := renderLinkHTML(link, resolve, prefix)
 		result.WriteString(replacement)
 
 		lastEnd = fullEnd
@@ -141,9 +141,9 @@ func parseWikiLinkInner(inner string, isEmbed bool) WikiLink {
 	return link
 }
 
-func renderLinkHTML(link WikiLink, resolve ResolveFunc) string {
+func renderLinkHTML(link WikiLink, resolve ResolveFunc, prefix string) string {
 	if link.IsEmbed {
-		return renderEmbedHTML(link, resolve)
+		return renderEmbedHTML(link, resolve, prefix)
 	}
 
 	// Regular wikilink
@@ -161,7 +161,7 @@ func renderLinkHTML(link WikiLink, resolve ResolveFunc) string {
 		return `<span class="broken-link" title="未找到: ` + escapeHTML(link.Target) + `">` + escapeHTML(displayText) + `</span>`
 	}
 
-	href := "/api/note?path=" + encodeURIComponent(resolvedPath)
+	href := prefix + "/api/note?path=" + encodeURIComponent(resolvedPath)
 	if link.Heading != "" {
 		if strings.HasPrefix(link.Heading, "^") {
 			// Block reference: ^abc123 -> #block-abc123
@@ -175,14 +175,14 @@ func renderLinkHTML(link WikiLink, resolve ResolveFunc) string {
 	return `<a class="wikilink" href="` + href + `" data-path="` + escapeHTML(resolvedPath) + `">` + escapeHTML(displayText) + `</a>`
 }
 
-func renderEmbedHTML(link WikiLink, resolve ResolveFunc) string {
+func renderEmbedHTML(link WikiLink, resolve ResolveFunc, prefix string) string {
 	if link.IsAsset {
 		assetPath, found := resolve(link.Target)
 		if !found {
 			// Try the target as-is (might be a direct relative path)
 			assetPath = link.Target
 		}
-		src := "/assets?path=" + encodeURIComponent(assetPath)
+		src := prefix + "/assets?path=" + encodeURIComponent(assetPath)
 		lowerTarget := strings.ToLower(link.Target)
 
 		if strings.HasSuffix(lowerTarget, ".png") || strings.HasSuffix(lowerTarget, ".jpg") ||
@@ -205,7 +205,7 @@ func renderEmbedHTML(link WikiLink, resolve ResolveFunc) string {
 		return `<div class="embed-broken">未找到: ` + escapeHTML(link.Target) + `</div>`
 	}
 
-	return `<div class="embed-note" data-path="` + escapeHTML(resolvedPath) + `"><a href="/api/note?path=` + encodeURIComponent(resolvedPath) + `">🔗 ` + escapeHTML(link.Target) + `</a></div>`
+	return `<div class="embed-note" data-path="` + escapeHTML(resolvedPath) + `"><a href="` + prefix + `/api/note?path=` + encodeURIComponent(resolvedPath) + `">🔗 ` + escapeHTML(link.Target) + `</a></div>`
 }
 
 // findCodeRanges returns byte ranges [start, end) of content inside <code>...</code> and <pre>...</pre>.

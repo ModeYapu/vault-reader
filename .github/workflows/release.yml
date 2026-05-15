@@ -26,6 +26,7 @@ jobs:
               -o vault-reader-linux-$GOARCH ./cmd/vault-reader
             tar czf vault-reader-linux-$GOARCH.tar.gz \
               vault-reader-linux-$GOARCH \
+              INSTALL.md \
               scripts/install-service.sh \
               deploy.sh \
               Dockerfile \
