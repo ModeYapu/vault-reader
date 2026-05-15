@@ -43,7 +43,7 @@ var md = goldmark.New(
 				lang, hasLang := c.Language()
 				if entering {
 					if hasLang {
-						w.WriteString(`<pre class="chroma language-` + string(lang) + `"><code>`)
+						w.WriteString(`<pre class="chroma language-` + sanitizeLang(string(lang)) + `"><code>`)
 					} else {
 						w.WriteString(`<pre><code>`)
 					}
@@ -245,4 +245,16 @@ func addTargetBlank(htmlStr string) string {
 	// This won't touch wikilinks since they have href="/api/note..."
 	return strings.ReplaceAll(htmlStr, `<a href="http`,
 		`<a target="_blank" rel="noopener noreferrer" href="http`)
+}
+
+// sanitizeLang strips characters that are unsafe in HTML class attributes.
+func sanitizeLang(lang string) string {
+	var b strings.Builder
+	for _, ch := range lang {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+			(ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' {
+			b.WriteRune(ch)
+		}
+	}
+	return b.String()
 }

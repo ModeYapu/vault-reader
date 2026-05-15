@@ -8,8 +8,10 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"vault-reader/internal/parser"
@@ -21,9 +23,10 @@ import (
 
 // Indexer manages the SQLite index for a vault.
 type Indexer struct {
-	db       *sql.DB
-	vaultDir string
-	resolver *resolver.Resolver
+	db         *sql.DB
+	vaultDir   string
+	resolver   *resolver.Resolver
+	resolverMu sync.RWMutex
 }
 
 // New creates or opens an indexer database at the given path.
@@ -79,7 +82,9 @@ func (ix *Indexer) FullIndex() error {
 		meta := ix.parseFileMeta(f)
 		metas = append(metas, meta)
 	}
+	ix.resolverMu.Lock()
 	ix.resolver = resolver.New(metas)
+	ix.resolverMu.Unlock()
 
 	// Start transaction
 	tx, err := ix.db.Begin()
@@ -310,10 +315,13 @@ func formatPropertyValue(v any) string {
 
 // Resolve resolves a wikilink target using the resolver.
 func (ix *Indexer) Resolve(target string) resolver.ResolveResult {
-	if ix.resolver == nil {
+	ix.resolverMu.RLock()
+	r := ix.resolver
+	ix.resolverMu.RUnlock()
+	if r == nil {
 		return resolver.ResolveResult{}
 	}
-	return ix.resolver.Resolve(target)
+	return r.Resolve(target)
 }
 
 // Search performs a full-text search.
@@ -438,11 +446,6 @@ func (ix *Indexer) GetTagTree() ([]TagTreeNode, error) {
 	}
 	defer rows.Close()
 
-	// type treeNode is used internally for building the tree
-	type treeKey struct {
-		name     string
-		fullName string
-	}
 	type internalNode struct {
 		count    int
 		children map[string]*internalNode
@@ -486,7 +489,7 @@ func (ix *Indexer) GetTagTree() ([]TagTreeNode, error) {
 		for k := range m {
 			keys = append(keys, k)
 		}
-		sortStrings(keys)
+		sort.Strings(keys)
 
 		nodes := make([]TagTreeNode, 0, len(m))
 		for _, k := range keys {
@@ -507,11 +510,6 @@ func (ix *Indexer) GetTagTree() ([]TagTreeNode, error) {
 	}
 
 	return buildTree(root, ""), nil
-}
-
-// sortStrings sorts a string slice in place.
-func sortStrings(s []string) {
-	sort.Strings(s)
 }
 
 // GetFilesByTag returns file paths that have the given tag.
@@ -680,8 +678,8 @@ func (ix *Indexer) GetGraph(folder, tag, path string, depth, maxNodes int) ([]Gr
 	nodeArgs := []interface{}{}
 
 	if folder != "" {
-		nodeQuery += ` AND (path LIKE ? || '/%' OR path LIKE ?)`
-		nodeArgs = append(nodeArgs, folder+"/%", folder+"/%")
+		nodeQuery += ` AND (path LIKE ? || '/%' OR path = ?)`
+		nodeArgs = append(nodeArgs, escapeLike(folder), folder)
 	}
 	if tag != "" {
 		nodeQuery += ` AND path IN (SELECT file_path FROM tags WHERE tag = ?)`
@@ -852,7 +850,10 @@ func (ix *Indexer) GetDashboard() (*DashboardData, error) {
 	}
 
 	// Tags: top tags
-	data.Tags, _ = ix.GetTags()
+	data.Tags, err = ix.GetTags()
+	if err != nil {
+		slog.Warn("dashboard: failed to get tags", "error", err)
+	}
 	if len(data.Tags) > 10 {
 		data.Tags = data.Tags[:10]
 	}
@@ -884,8 +885,8 @@ func (ix *Indexer) ExecuteVaultQuery(q *parser.VaultQuery) ([]QueryResultRow, er
 	whereClauses := []string{}
 
 	if q.From != "" {
-		whereClauses = append(whereClauses, "(f.path LIKE ? || '/%' OR f.path LIKE ?)")
-		args = append(args, q.From+"/%", q.From+"/%")
+		whereClauses = append(whereClauses, "(f.path LIKE ? || '/%' OR f.path = ?)")
+		args = append(args, escapeLike(q.From), q.From)
 	}
 
 	// Process where filters via properties
@@ -896,7 +897,7 @@ func (ix *Indexer) ExecuteVaultQuery(q *parser.VaultQuery) ([]QueryResultRow, er
 
 	whereSQL := ""
 	if len(whereClauses) > 0 {
-		whereSQL = "WHERE " + joinStrings(whereClauses, " AND ")
+		whereSQL = "WHERE " + strings.Join(whereClauses, " AND ")
 	}
 
 	orderBy := "f.mtime DESC"
@@ -962,11 +963,6 @@ func (ix *Indexer) ExecuteVaultQuery(q *parser.VaultQuery) ([]QueryResultRow, er
 	return results, rows.Err()
 }
 
-// joinStrings joins strings with a separator.
-func joinStrings(ss []string, sep string) string {
-	return strings.Join(ss, sep)
-}
-
 // expandGraphNeighbors adds neighbors of a node to the node map, up to depth levels.
 func (ix *Indexer) expandGraphNeighbors(nodeMap map[string]GraphNode, centerPath string, depth, maxNodes int) {
 	if depth <= 0 || len(nodeMap) >= maxNodes {
@@ -1001,7 +997,9 @@ func (ix *Indexer) expandGraphNeighbors(nodeMap map[string]GraphNode, centerPath
 			break
 		}
 		var title string
-		ix.db.QueryRow(`SELECT title FROM files WHERE path = ?`, p).Scan(&title)
+		if err := ix.db.QueryRow(`SELECT title FROM files WHERE path = ?`, p).Scan(&title); err != nil {
+			continue
+		}
 		parts := strings.Split(p, "/")
 		group := ""
 		if len(parts) > 1 {
@@ -1013,15 +1011,28 @@ func (ix *Indexer) expandGraphNeighbors(nodeMap map[string]GraphNode, centerPath
 	}
 }
 
+// escapeLike escapes SQL LIKE wildcard characters (% and _).
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
+}
+
+// ftsKeywordRe matches standalone FTS5 keywords (word-boundary aware).
+var ftsKeywordRe = regexp.MustCompile(`\b(AND|OR|NOT)\b`)
+
 // cleanFTSQuery sanitizes a search query for FTS5 MATCH.
 func cleanFTSQuery(query string) string {
 	// Remove characters that have special meaning in FTS5
 	replacer := strings.NewReplacer(
 		`"`, ``, `{`, ``, `}`, ``, `(`, ``, `)`, ``,
 		`:`, ``, `^`, ``, `+`, ``, `*`, ``,
-		`~`, ``, `AND`, ``, `OR`, ``, `NOT`, ``,
+		`~`, ``,
 	)
 	cleaned := replacer.Replace(query)
+	// Remove standalone AND/OR/NOT keywords (not substrings like "SANDWICH")
+	cleaned = ftsKeywordRe.ReplaceAllString(cleaned, "")
 	cleaned = strings.TrimSpace(cleaned)
 	if cleaned == "" {
 		return `""`

@@ -138,6 +138,10 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	files, err := scanner.Scan(s.vaultDir)
 	if err != nil {
 		slog.Error("scan failed", "error", err)
@@ -149,6 +153,10 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	path := r.URL.Query().Get("path")
 	if path == "" {
 		http.Error(w, "path parameter required", http.StatusBadRequest)
@@ -195,6 +203,10 @@ func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	q := r.URL.Query().Get("q")
 	if q == "" {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"items": []interface{}{}})
@@ -217,6 +229,10 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBacklinks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	path := r.URL.Query().Get("path")
 	if path == "" {
 		http.Error(w, "path parameter required", http.StatusBadRequest)
@@ -239,6 +255,10 @@ func (s *Server) handleBacklinks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	if s.indexer == nil {
 		http.Error(w, "index not available", http.StatusServiceUnavailable)
 		return
@@ -255,6 +275,10 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTag(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	name := r.URL.Query().Get("name")
 	if name == "" {
 		http.Error(w, "name parameter required", http.StatusBadRequest)
@@ -277,6 +301,10 @@ func (s *Server) handleTag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTagTree(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	if s.indexer == nil {
 		http.Error(w, "index not available", http.StatusServiceUnavailable)
 		return
@@ -293,6 +321,10 @@ func (s *Server) handleTagTree(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCanvas(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	path := r.URL.Query().Get("path")
 	if path == "" {
 		http.Error(w, "path parameter required", http.StatusBadRequest)
@@ -328,6 +360,10 @@ func (s *Server) handleCanvas(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	if s.indexer == nil {
 		http.Error(w, "index not available", http.StatusServiceUnavailable)
 		return
@@ -363,6 +399,10 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	if s.indexer == nil {
 		http.Error(w, "index not available", http.StatusServiceUnavailable)
 		return
@@ -416,6 +456,10 @@ func (s *Server) handleVaultQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProperties(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	path := r.URL.Query().Get("path")
 	if path == "" {
 		http.Error(w, "path parameter required", http.StatusBadRequest)
@@ -438,6 +482,10 @@ func (s *Server) handleProperties(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFilter(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	key := r.URL.Query().Get("key")
 	value := r.URL.Query().Get("value")
 	if key == "" || value == "" {
@@ -461,6 +509,10 @@ func (s *Server) handleFilter(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	path := r.URL.Query().Get("path")
 	if path == "" {
 		http.Error(w, "path parameter required", http.StatusBadRequest)
@@ -484,6 +536,10 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
+		if info.IsDir() {
+			http.Error(w, "not a file", http.StatusBadRequest)
+			return
+		}
 
 	contentType := contentTypeFromExt(filepath.Ext(info.Name()))
 	w.Header().Set("Content-Type", contentType)

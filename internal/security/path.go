@@ -21,6 +21,11 @@ func ValidatePath(vaultDir, requestedPath string) error {
 		return fmt.Errorf("invalid path: absolute paths not allowed")
 	}
 
+	// Reject Windows UNC paths
+	if strings.HasPrefix(requestedPath, `\\`) {
+		return fmt.Errorf("invalid path: UNC paths not allowed")
+	}
+
 	// On Windows, also reject drive-letter paths
 	if runtime.GOOS == "windows" && len(requestedPath) >= 2 && requestedPath[1] == ':' {
 		return fmt.Errorf("invalid path: drive letter paths not allowed")
@@ -40,7 +45,6 @@ func ValidatePath(vaultDir, requestedPath string) error {
 	// Resolve symlinks to prevent symlink traversal attacks
 	absVault, err := filepath.EvalSymlinks(vaultDir)
 	if err != nil {
-		// EvalSymlinks fails if vaultDir doesn't exist; fall back to Abs
 		absVault, err = filepath.Abs(vaultDir)
 		if err != nil {
 			return fmt.Errorf("invalid vault dir: %w", err)
@@ -53,7 +57,7 @@ func ValidatePath(vaultDir, requestedPath string) error {
 		parent := filepath.Dir(fullPath)
 		resolvedParent, err := filepath.EvalSymlinks(parent)
 		if err != nil {
-			// Fall back to Abs if parent also doesn't resolve
+			// Parent also does not resolve - use Abs as fallback
 			absFull, err = filepath.Abs(fullPath)
 			if err != nil {
 				return fmt.Errorf("invalid path: %w", err)

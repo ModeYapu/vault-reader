@@ -12,6 +12,9 @@ services:
     volumes:
       - /opt/obsidian-vault:/vault:ro
       - /opt/vault-reader-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
     deploy:
       resources:
         limits:

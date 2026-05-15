@@ -1,14 +1,12 @@
 # Stage 1: Build
-FROM golang:1.25-alpine AS builder
-
-RUN apk add --no-cache gcc musl-dev
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /vault-reader ./cmd/vault-reader
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /vault-reader ./cmd/vault-reader
 
 # Stage 2: Runtime
 FROM alpine:3.20

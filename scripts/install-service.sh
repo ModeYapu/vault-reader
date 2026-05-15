@@ -7,6 +7,7 @@ set -e
 VAULT_DIR="${1:-/opt/obsidian-vault}"
 DATA_DIR="${2:-/opt/vault-reader-data}"
 BIN_PATH="/usr/local/bin/vault-reader"
+SERVICE_USER="vaultreader"
 
 if [ ! -f "bin/vault-reader" ]; then
     echo "Error: bin/vault-reader not found. Run scripts/build.sh first."
@@ -14,17 +15,20 @@ if [ ! -f "bin/vault-reader" ]; then
 fi
 
 echo "Installing vault-reader..."
-echo "  Vault: $VAULT_DIR"
-echo "  Data:  $DATA_DIR"
+echo "  Vault: ${VAULT_DIR}"
+echo "  Data:  ${DATA_DIR}"
+
+# Stop service if running
+systemctl stop vault-reader 2>/dev/null || true
 
 # Copy binary
-cp bin/vault-reader "$BIN_PATH"
-chmod +x "$BIN_PATH"
+cp bin/vault-reader "${BIN_PATH}"
+chmod +x "${BIN_PATH}"
 
 # Create data directory
-mkdir -p "$DATA_DIR"
+mkdir -p "${DATA_DIR}"
 
-# Create systemd service
+# Create systemd service with security hardening
 cat > /etc/systemd/system/vault-reader.service << EOF
 [Unit]
 Description=Vault Reader - Obsidian Vault Web Reader
@@ -32,25 +36,32 @@ After=network.target
 
 [Service]
 Type=simple
-User=vault-reader
-Group=vault-reader
-ExecStart=$BIN_PATH --vault $VAULT_DIR --data $DATA_DIR --addr :3000
+User=${SERVICE_USER}
+Group=${SERVICE_USER}
+ExecStart=${BIN_PATH} --vault ${VAULT_DIR} --data ${DATA_DIR} --addr :3000
 Restart=on-failure
 RestartSec=5
-Environment=HOME=/var/lib/vault-reader
+LimitNOFILE=65536
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=${VAULT_DIR}
+ReadWritePaths=${DATA_DIR}
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 # Create service user if not exists
-if ! id -u vault-reader > /dev/null 2>&1; then
-    useradd --system --no-create-home --shell /usr/sbin/nologin vault-reader
+if ! id -u "${SERVICE_USER}" >/dev/null 2>&1; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin "${SERVICE_USER}"
 fi
 
 # Set permissions
-chown -R vault-reader:vault-reader "$DATA_DIR"
-chown vault-reader:vault-reader "$BIN_PATH"
+chown -R "${SERVICE_USER}:${SERVICE_USER}" "${DATA_DIR}"
+chown "${SERVICE_USER}:${SERVICE_USER}" "${BIN_PATH}"
 
 # Enable and start
 systemctl daemon-reload

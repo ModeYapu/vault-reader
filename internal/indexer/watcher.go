@@ -3,6 +3,7 @@ package indexer
 import (
 	"io/fs"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -13,13 +14,14 @@ import (
 
 // Watcher watches the vault directory for changes and triggers reindex.
 type Watcher struct {
-	indexer   *Indexer
-	vaultDir  string
-	watcher   *fsnotify.Watcher
-	debounce  time.Duration
-	done      chan struct{}
-	mu        sync.Mutex
-	timer     *time.Timer
+	indexer  *Indexer
+	vaultDir string
+	watcher  *fsnotify.Watcher
+	debounce time.Duration
+	done     chan struct{}
+	closeOnce sync.Once
+	mu       sync.Mutex
+	timer    *time.Timer
 }
 
 // NewWatcher creates a new file watcher.
@@ -48,24 +50,31 @@ func NewWatcher(ix *Indexer, vaultDir string) (*Watcher, error) {
 	return w, nil
 }
 
-// Close stops the watcher.
+// Close stops the watcher. Safe to call multiple times.
 func (w *Watcher) Close() error {
-	close(w.done)
+	w.closeOnce.Do(func() {
+		close(w.done)
+	})
 	return w.watcher.Close()
 }
 
 func (w *Watcher) addWatchDirs() error {
 	return filepath.WalkDir(w.vaultDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			slog.Warn("watcher: skipping directory", "path", path, "error", err)
 			return nil
 		}
 
 		// Skip ignored directories
-		rel, _ := filepath.Rel(w.vaultDir, path)
+		rel, relErr := filepath.Rel(w.vaultDir, path)
+		if relErr != nil {
+			slog.Warn("watcher: cannot compute relative path", "path", path, "error", relErr)
+			return nil
+		}
 		parts := strings.Split(filepath.ToSlash(rel), "/")
 		for _, p := range parts {
 			if p == ".obsidian" || p == ".git" || p == "node_modules" ||
-				p == ".trash" || p == ".vault-reader-data" || p == ".DS_Store" {
+				p == ".trash" || p == ".vault-reader-data" {
 				return filepath.SkipDir
 			}
 		}
@@ -105,11 +114,7 @@ func (w *Watcher) handleEvent(event fsnotify.Event) {
 	if ext != ".md" && ext != ".markdown" && !isWatchedAsset(ext) {
 		// Also handle directory creation (need to watch new dirs)
 		if event.Has(fsnotify.Create) {
-			if de, err := filepath.Abs(name); err == nil {
-				_ = de
-				// Check if it's a directory and add to watcher
-				w.tryAddDir(name)
-			}
+			w.tryAddDir(name)
 		}
 		return
 	}
@@ -131,17 +136,16 @@ func (w *Watcher) handleEvent(event fsnotify.Event) {
 }
 
 func (w *Watcher) tryAddDir(path string) {
-	// Simple check: try to add as watch target
-	// fsnotify will only succeed for directories
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return
+	}
 	if err := w.watcher.Add(path); err == nil {
 		slog.Debug("watching new directory", "path", path)
 	}
 }
 
 func (w *Watcher) reindex() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
 	slog.Info("reindexing due to vault changes")
 	if err := w.indexer.FullIndex(); err != nil {
 		slog.Error("reindex failed", "error", err)

@@ -16,21 +16,21 @@ echo ""
 
 # 1. 编译 Linux amd64 二进制
 echo "[1/5] 编译 Linux 二进制..."
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o vault-reader-linux ./cmd/vault-reader
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o vault-reader-linux ./cmd/vault-reader
 
 # 2. 创建用户（如果不存在）
 echo "[2/5] 创建服务用户..."
-if ! id -u ${SERVICE_USER} >/dev/null 2>&1; then
-    useradd --system --no-create-home --shell /usr/sbin/nologin ${SERVICE_USER}
+if ! id -u "${SERVICE_USER}" >/dev/null 2>&1; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin "${SERVICE_USER}"
 fi
 
 # 3. 安装文件
 echo "[3/5] 安装..."
-mkdir -p ${INSTALL_DIR}
-cp vault-reader-linux ${INSTALL_DIR}/vault-reader
-chmod +x ${INSTALL_DIR}/vault-reader
-mkdir -p ${DATA_DIR}
-chown -R ${SERVICE_USER}:${SERVICE_USER} ${DATA_DIR}
+mkdir -p "${INSTALL_DIR}"
+cp vault-reader-linux "${INSTALL_DIR}/vault-reader"
+chmod +x "${INSTALL_DIR}/vault-reader"
+mkdir -p "${DATA_DIR}"
+chown -R "${SERVICE_USER}:${SERVICE_USER}" "${DATA_DIR}"
 
 # 4. 写入 systemd 服务文件
 echo "[4/5] 配置 systemd 服务..."
@@ -69,7 +69,7 @@ echo ""
 echo "=== 部署完成 ==="
 echo "服务状态: systemctl status vault-reader"
 echo "查看日志: journalctl -u vault-reader -f"
-echo "访问地址: http://$(hostname -I | awk '{print $1}'):3000"
+echo "访问地址: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo localhost):3000"
 echo ""
 echo "常用命令:"
 echo "  重启: systemctl restart vault-reader"
