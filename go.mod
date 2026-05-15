@@ -1,6 +1,6 @@
 module vault-reader
 
-go 1.25.6
+go 1.25.0
 
 require (
 	github.com/alecthomas/chroma/v2 v2.24.1

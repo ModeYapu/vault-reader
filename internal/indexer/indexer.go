@@ -27,6 +27,7 @@ type Indexer struct {
 	vaultDir   string
 	resolver   *resolver.Resolver
 	resolverMu sync.RWMutex
+	indexMu    sync.Mutex // serializes FullIndex calls
 }
 
 // New creates or opens an indexer database at the given path.
@@ -63,8 +64,49 @@ func (ix *Indexer) DB() *sql.DB {
 	return ix.db
 }
 
+// GetFileList returns all indexed file paths for building the tree view.
+func (ix *Indexer) GetFileList() ([]string, error) {
+	rows, err := ix.db.Query(`SELECT path FROM files ORDER BY path`)
+	if err != nil {
+		return nil, fmt.Errorf("file list query: %w", err)
+	}
+	defer rows.Close()
+
+	var paths []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		paths = append(paths, p)
+	}
+	return paths, rows.Err()
+}
+
+// GetCanvasFiles returns canvas file paths from the database.
+func (ix *Indexer) GetCanvasFiles() ([]TagFile, error) {
+	rows, err := ix.db.Query(`SELECT path, title FROM files WHERE ext = '.canvas' ORDER BY path`)
+	if err != nil {
+		return nil, fmt.Errorf("canvas files query: %w", err)
+	}
+	defer rows.Close()
+
+	var files []TagFile
+	for rows.Next() {
+		var f TagFile
+		if err := rows.Scan(&f.Path, &f.Title); err != nil {
+			return nil, err
+		}
+		files = append(files, f)
+	}
+	return files, rows.Err()
+}
+
 // FullIndex scans the entire vault and rebuilds the index.
 func (ix *Indexer) FullIndex() error {
+	ix.indexMu.Lock()
+	defer ix.indexMu.Unlock()
+
 	start := time.Now()
 	slog.Info("starting full index", "vault", ix.vaultDir)
 
@@ -82,9 +124,6 @@ func (ix *Indexer) FullIndex() error {
 		meta := ix.parseFileMeta(f)
 		metas = append(metas, meta)
 	}
-	ix.resolverMu.Lock()
-	ix.resolver = resolver.New(metas)
-	ix.resolverMu.Unlock()
 
 	// Start transaction
 	tx, err := ix.db.Begin()
@@ -93,6 +132,11 @@ func (ix *Indexer) FullIndex() error {
 	}
 	defer tx.Rollback()
 
+	// Update resolver after transaction starts, keeping resolver and DB in sync
+	ix.resolverMu.Lock()
+	ix.resolver = resolver.New(metas)
+	ix.resolverMu.Unlock()
+
 	// Clear existing data
 	for _, table := range []string{"files", "links", "tags", "headings", "properties", "blocks", "file_fts"} {
 		if _, err := tx.Exec("DELETE FROM " + table); err != nil {
@@ -100,13 +144,18 @@ func (ix *Indexer) FullIndex() error {
 		}
 	}
 
+	// Capture resolver snapshot for the indexing loop
+	ix.resolverMu.RLock()
+	localResolver := ix.resolver
+	ix.resolverMu.RUnlock()
+
 	// Second pass: index all markdown files
 	now := time.Now().Unix()
 	for _, f := range files {
 		if !f.IsMarkdown {
 			continue
 		}
-		if err := ix.indexFile(tx, f, now); err != nil {
+		if err := ix.indexFileWithResolver(tx, localResolver, f, now); err != nil {
 			slog.Error("failed to index file", "path", f.Path, "error", err)
 		}
 	}
@@ -151,7 +200,7 @@ func (ix *Indexer) parseFileMeta(f scanner.VaultFile) resolver.FileMeta {
 	return meta
 }
 
-func (ix *Indexer) indexFile(tx *sql.Tx, f scanner.VaultFile, now int64) error {
+func (ix *Indexer) indexFileWithResolver(tx *sql.Tx, res *resolver.Resolver, f scanner.VaultFile, now int64) error {
 	fullPath := filepath.Join(ix.vaultDir, filepath.FromSlash(f.Path))
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
@@ -187,7 +236,7 @@ func (ix *Indexer) indexFile(tx *sql.Tx, f scanner.VaultFile, now int64) error {
 		resolvedPath := ""
 		resolved := 0
 		if !link.IsAsset {
-			result := ix.resolver.Resolve(link.Target)
+			result := res.Resolve(link.Target)
 			if result.Found {
 				resolvedPath = result.TargetPath
 				resolved = 1
@@ -733,11 +782,22 @@ func (ix *Indexer) GetGraph(folder, tag, path string, depth, maxNodes int) ([]Gr
 
 	var edges []GraphEdge
 	if len(paths) > 0 {
+		// Filter edges by node set in SQL to avoid loading all links
+		placeholders := strings.Repeat("?,", len(paths))
+		placeholders = placeholders[:len(placeholders)-1]
+		edgeArgs := make([]interface{}, len(paths)*2)
+		for i, p := range paths {
+			edgeArgs[i] = p
+			edgeArgs[len(paths)+i] = p
+		}
 		edgeRows, err := ix.db.Query(`
 			SELECT DISTINCT from_path, target_path
 			FROM links
 			WHERE resolved = 1 AND target_path != ''
-			AND from_path != target_path`)
+			AND from_path != target_path
+			AND from_path IN (`+placeholders+`)
+			AND target_path IN (`+placeholders+`)`,
+			edgeArgs...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("graph edges query: %w", err)
 		}
@@ -749,13 +809,10 @@ func (ix *Indexer) GetGraph(folder, tag, path string, depth, maxNodes int) ([]Gr
 			if err := edgeRows.Scan(&src, &tgt); err != nil {
 				return nil, nil, err
 			}
-			// Only include edges where both endpoints are in our node set
-			if nodeMap[src].ID != "" && nodeMap[tgt].ID != "" {
-				key := src + "->" + tgt
-				if !seen[key] {
-					seen[key] = true
-					edges = append(edges, GraphEdge{Source: src, Target: tgt})
-				}
+			key := src + "->" + tgt
+			if !seen[key] {
+				seen[key] = true
+				edges = append(edges, GraphEdge{Source: src, Target: tgt})
 			}
 		}
 		if err := edgeRows.Err(); err != nil {
@@ -787,36 +844,42 @@ func (ix *Indexer) GetDashboard() (*DashboardData, error) {
 	data := &DashboardData{}
 
 	// Recent: files ordered by mtime desc, limit 10
-	rows, err := ix.db.Query(`
+	recentRows, err := ix.db.Query(`
 		SELECT path, title FROM files
 		ORDER BY mtime DESC LIMIT 10`)
 	if err != nil {
 		return nil, fmt.Errorf("dashboard recent: %w", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
+	defer recentRows.Close()
+	for recentRows.Next() {
 		var f TagFile
-		if err := rows.Scan(&f.Path, &f.Title); err != nil { continue }
+		if err := recentRows.Scan(&f.Path, &f.Title); err != nil {
+			slog.Warn("dashboard: scan recent error", "error", err)
+			continue
+		}
 		data.Recent = append(data.Recent, f)
 	}
 
 	// Inbox: files in 00_Inbox
-	rows, err = ix.db.Query(`
+	inboxRows, err := ix.db.Query(`
 		SELECT path, title FROM files
 		WHERE path LIKE '00_Inbox/%'
 		ORDER BY mtime DESC LIMIT 10`)
 	if err != nil {
 		return nil, fmt.Errorf("dashboard inbox: %w", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
+	defer inboxRows.Close()
+	for inboxRows.Next() {
 		var f TagFile
-		if err := rows.Scan(&f.Path, &f.Title); err != nil { continue }
+		if err := inboxRows.Scan(&f.Path, &f.Title); err != nil {
+			slog.Warn("dashboard: scan inbox error", "error", err)
+			continue
+		}
 		data.Inbox = append(data.Inbox, f)
 	}
 
 	// Active: status = active
-	rows, err = ix.db.Query(`
+	activeRows, err := ix.db.Query(`
 		SELECT DISTINCT p.file_path, f.title
 		FROM properties p
 		LEFT JOIN files f ON p.file_path = f.path
@@ -825,15 +888,18 @@ func (ix *Indexer) GetDashboard() (*DashboardData, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dashboard active: %w", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
+	defer activeRows.Close()
+	for activeRows.Next() {
 		var f TagFile
-		if err := rows.Scan(&f.Path, &f.Title); err != nil { continue }
+		if err := activeRows.Scan(&f.Path, &f.Title); err != nil {
+			slog.Warn("dashboard: scan active error", "error", err)
+			continue
+		}
 		data.Active = append(data.Active, f)
 	}
 
 	// Debug: type = debug-note
-	rows, err = ix.db.Query(`
+	debugRows, err := ix.db.Query(`
 		SELECT DISTINCT p.file_path, f.title
 		FROM properties p
 		LEFT JOIN files f ON p.file_path = f.path
@@ -842,10 +908,13 @@ func (ix *Indexer) GetDashboard() (*DashboardData, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dashboard debug: %w", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
+	defer debugRows.Close()
+	for debugRows.Next() {
 		var f TagFile
-		if err := rows.Scan(&f.Path, &f.Title); err != nil { continue }
+		if err := debugRows.Scan(&f.Path, &f.Title); err != nil {
+			slog.Warn("dashboard: scan debug error", "error", err)
+			continue
+		}
 		data.Debug = append(data.Debug, f)
 	}
 
@@ -858,14 +927,10 @@ func (ix *Indexer) GetDashboard() (*DashboardData, error) {
 		data.Tags = data.Tags[:10]
 	}
 
-	// Canvas: canvas files from scanner
-	canvasFiles, err := scanner.Scan(ix.vaultDir)
+	// Canvas: canvas files from database
+	canvasFiles, err := ix.GetCanvasFiles()
 	if err == nil {
-		for _, f := range canvasFiles {
-			if f.IsCanvas {
-				data.Canvas = append(data.Canvas, TagFile{Path: f.Path, Title: f.Name})
-			}
-		}
+		data.Canvas = canvasFiles
 	}
 
 	return data, nil
@@ -931,36 +996,59 @@ func (ix *Indexer) ExecuteVaultQuery(q *parser.VaultQuery) ([]QueryResultRow, er
 	defer rows.Close()
 
 	var results []QueryResultRow
+	// Collect paths for batch property lookup
+	var paths []string
 	for rows.Next() {
 		var path, title string
 		if err := rows.Scan(&path, &title); err != nil {
 			return nil, err
 		}
-
-		row := QueryResultRow{
+		results = append(results, QueryResultRow{
 			Path:   path,
 			Title:  title,
 			Fields: make(map[string]string),
-		}
+		})
+		paths = append(paths, path)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-		// Fetch requested fields from properties
-		if len(q.Fields) > 0 {
-			propRows, err := ix.db.Query(`SELECT key, value FROM properties WHERE file_path = ?`, path)
-			if err == nil {
-				for propRows.Next() {
-					var k, v string
-					if err := propRows.Scan(&k, &v); err != nil {
-						continue
-					}
-					row.Fields[k] = v
+	// Batch-fetch properties for all result paths
+	if len(q.Fields) > 0 && len(paths) > 0 {
+		placeholders := strings.Repeat("?,", len(paths))
+		placeholders = placeholders[:len(placeholders)-1]
+		propArgs := make([]interface{}, len(paths))
+		for i, p := range paths {
+			propArgs[i] = p
+		}
+		propRows, err := ix.db.Query(
+			`SELECT file_path, key, value FROM properties WHERE file_path IN (`+placeholders+`)`,
+			propArgs...)
+		if err == nil {
+			// Build path->properties map
+			propMap := make(map[string]map[string]string)
+			for propRows.Next() {
+				var fp, k, v string
+				if err := propRows.Scan(&fp, &k, &v); err != nil {
+					continue
 				}
-				propRows.Close()
+				if _, ok := propMap[fp]; !ok {
+					propMap[fp] = make(map[string]string)
+				}
+				propMap[fp][k] = v
+			}
+			propRows.Close()
+			// Apply to results
+			for i, r := range results {
+				if props, ok := propMap[r.Path]; ok {
+					results[i].Fields = props
+				}
 			}
 		}
-
-		results = append(results, row)
 	}
-	return results, rows.Err()
+
+	return results, nil
 }
 
 // expandGraphNeighbors adds neighbors of a node to the node map, up to depth levels.

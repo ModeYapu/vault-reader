@@ -16,10 +16,16 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		slog.Error("fatal error", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	cfg, err := config.ParseArgs(os.Args[1:])
 	if err != nil {
-		slog.Error("invalid arguments", "error", err)
-		os.Exit(1)
+		return err
 	}
 
 	// Verify vault directory exists and is a directory
@@ -30,17 +36,17 @@ func main() {
 		} else {
 			slog.Error("cannot access vault directory", "path", cfg.VaultDir, "error", err)
 		}
-		os.Exit(1)
+		return err
 	}
 	if !info.IsDir() {
 		slog.Error("vault path is not a directory", "path", cfg.VaultDir)
-		os.Exit(1)
+		return os.ErrNotExist
 	}
 
 	// Ensure data directory exists
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		slog.Error("cannot create data directory", "path", cfg.DataDir, "error", err)
-		os.Exit(1)
+		return err
 	}
 
 	slog.Info("starting vault-reader",
@@ -54,7 +60,7 @@ func main() {
 	ix, err := indexer.New(dbPath, cfg.VaultDir)
 	if err != nil {
 		slog.Error("failed to initialize indexer", "error", err)
-		os.Exit(1)
+		return err
 	}
 	defer ix.Close()
 
@@ -62,7 +68,7 @@ func main() {
 	slog.Info("building index...")
 	if err := ix.FullIndex(); err != nil {
 		slog.Error("full index failed, cannot start server", "error", err)
-		os.Exit(1)
+		return err
 	}
 
 	// Start file watcher
@@ -114,4 +120,5 @@ func main() {
 		slog.Error("shutdown error", "error", err)
 	}
 	slog.Info("server stopped")
+	return nil
 }

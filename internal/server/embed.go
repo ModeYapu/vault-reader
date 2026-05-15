@@ -645,7 +645,7 @@ const indexHTML = `<!DOCTYPE html>
             mermaid.initialize({
                 startOnLoad: false,
                 theme: isDark ? 'dark' : 'default',
-                securityLevel: 'loose',
+                securityLevel: 'strict',
                 fontFamily: 'var(--font-mono)'
             });
         }
@@ -1340,7 +1340,7 @@ const indexHTML = `<!DOCTYPE html>
                         '<div class="search-result-item" onclick="loadNote(\'' + escAttr(r.path) + '\');$(\'searchResults\').style.display=\'none\'">' +
                         '<div class="sr-title">' + escHtml(stripMdExt(r.title)) + '</div>' +
                         '<div class="sr-path">' + escHtml(r.path) + '</div>' +
-                        '<div class="sr-snippet">' + (r.snippet || '') + '</div></div>'
+                        '<div class="sr-snippet">' + escHtml(r.snippet || '') + '</div></div>'
                     ).join('');
                 }
                 $('searchResults').style.display = 'block';
@@ -1709,7 +1709,7 @@ const indexHTML = `<!DOCTYPE html>
 
     // ==================== Helpers ====================
     function escHtml(s) { if (!s) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-    function escAttr(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+    function escAttr(s) { if (!s) return ''; return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
     // ==================== Dashboard ====================
     async function loadDashboard() {

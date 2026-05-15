@@ -2,6 +2,7 @@ package parser
 
 import (
 	"encoding/json"
+	"strings"
 )
 
 // CanvasDocument represents a parsed Obsidian .canvas file.
@@ -42,5 +43,21 @@ func ParseCanvas(content string, filePath string) (*CanvasDocument, error) {
 	if err := json.Unmarshal([]byte(content), &doc); err != nil {
 		return nil, err
 	}
+	// Sanitize dangerous URL schemes in link nodes
+	for i := range doc.Nodes {
+		if doc.Nodes[i].URL != "" {
+			doc.Nodes[i].URL = sanitizeCanvasURL(doc.Nodes[i].URL)
+		}
+	}
 	return &doc, nil
+}
+
+// sanitizeCanvasURL blocks javascript: and data: URL schemes.
+func sanitizeCanvasURL(u string) string {
+	trimmed := strings.TrimSpace(u)
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "javascript:") || strings.HasPrefix(lower, "data:") || strings.HasPrefix(lower, "vbscript:") {
+		return ""
+	}
+	return u
 }

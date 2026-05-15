@@ -106,6 +106,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'")
 	s.mux.ServeHTTP(w, r)
 }
 
@@ -142,6 +143,25 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	if s.indexer != nil {
+		// Use indexed data instead of filesystem scan
+		paths, err := s.indexer.GetFileList()
+		if err != nil {
+			slog.Error("file list query failed", "error", err)
+			http.Error(w, "query failed", http.StatusInternalServerError)
+			return
+		}
+		vfiles := make([]scanner.VaultFile, len(paths))
+		for i, p := range paths {
+			vfiles[i] = scanner.VaultFile{Path: p, Name: filepath.Base(p)}
+		}
+		tree := scanner.BuildTree(vfiles)
+		writeJSON(w, http.StatusOK, tree)
+		return
+	}
+
+	// Fallback: scan filesystem when no indexer
 	files, err := scanner.Scan(s.vaultDir)
 	if err != nil {
 		slog.Error("scan failed", "error", err)
@@ -170,12 +190,24 @@ func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fullPath := filepath.Join(s.vaultDir, filepath.FromSlash(path))
-	content, err := os.ReadFile(fullPath)
+
+	// Limit file size to prevent OOM
+	info, err := os.Stat(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	if info.Size() > 10*1024*1024 {
+		http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
 		slog.Error("read file failed", "path", path, "error", err)
 		http.Error(w, "read error", http.StatusInternalServerError)
 		return
@@ -236,6 +268,12 @@ func (s *Server) handleBacklinks(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
 	if path == "" {
 		http.Error(w, "path parameter required", http.StatusBadRequest)
+		return
+	}
+
+	if err := security.ValidatePath(s.vaultDir, path); err != nil {
+		slog.Warn("backlinks path validation failed", "path", path, "error", err)
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -338,12 +376,24 @@ func (s *Server) handleCanvas(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fullPath := filepath.Join(s.vaultDir, filepath.FromSlash(path))
-	content, err := os.ReadFile(fullPath)
+
+	// Limit file size to prevent OOM
+	stat, err := os.Stat(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	if stat.Size() > 10*1024*1024 {
+		http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
 		slog.Error("read canvas failed", "path", path, "error", err)
 		http.Error(w, "read error", http.StatusInternalServerError)
 		return
@@ -466,6 +516,12 @@ func (s *Server) handleProperties(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := security.ValidatePath(s.vaultDir, path); err != nil {
+		slog.Warn("properties path validation failed", "path", path, "error", err)
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
 	if s.indexer == nil {
 		http.Error(w, "index not available", http.StatusServiceUnavailable)
 		return
@@ -545,7 +601,8 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	// SVG can contain scripts; serve as attachment to prevent XSS
 	if contentType == "image/svg+xml" {
-		w.Header().Set("Content-Disposition", "attachment; filename="+info.Name())
+		safeName := strings.ReplaceAll(info.Name(), "\"", "\\\"")
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+safeName+"\"")
 	}
 	http.ServeFile(w, r, fullPath)
 }
@@ -573,7 +630,9 @@ func contentTypeFromExt(ext string) string {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Error("json encode error", "error", err)
+	}
 }
