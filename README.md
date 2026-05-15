@@ -81,6 +81,40 @@ docker run -d \
   vault-reader --prefix /vault
 ```
 
+## Reverse Proxy (Subpath)
+
+To serve under a subpath like `https://example.com/vault/`:
+
+**1. Start vault-reader with `--prefix`**
+
+```bash
+vault-reader --vault /path/to/vault --prefix /vault
+```
+
+**2. Configure Nginx**
+
+```nginx
+location /vault/ {
+    proxy_pass http://127.0.0.1:3000/vault/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+**3. Or configure Caddy**
+
+```
+example.com {
+    handle_path /vault/* {
+        reverse_proxy localhost:3000
+    }
+}
+```
+
+> **Note:** Without `--prefix`, all paths are served from root `/`. Use `--prefix` only when mounting behind a reverse proxy subpath.
+
 ## API Endpoints
 
 | Endpoint | Method | Description |

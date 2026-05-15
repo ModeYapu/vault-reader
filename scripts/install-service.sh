@@ -2,10 +2,15 @@
 set -e
 
 # Install vault-reader as a systemd service
-# Usage: sudo ./scripts/install-service.sh /opt/obsidian-vault
+# Usage: sudo ./scripts/install-service.sh [/opt/obsidian-vault] [/opt/vault-reader-data] [/vault]
+# 示例:
+#   sudo ./scripts/install-service.sh                          # 默认
+#   sudo ./scripts/install-service.sh /data/vault              # 指定 vault
+#   sudo ./scripts/install-service.sh /data/vault /data /vault # 指定 vault + data + prefix
 
 VAULT_DIR="${1:-/opt/obsidian-vault}"
 DATA_DIR="${2:-/opt/vault-reader-data}"
+PREFIX="${3:-}"
 BIN_PATH="/usr/local/bin/vault-reader"
 SERVICE_USER="vaultreader"
 
@@ -15,8 +20,9 @@ if [ ! -f "bin/vault-reader" ]; then
 fi
 
 echo "Installing vault-reader..."
-echo "  Vault: ${VAULT_DIR}"
-echo "  Data:  ${DATA_DIR}"
+echo "  Vault:  ${VAULT_DIR}"
+echo "  Data:   ${DATA_DIR}"
+echo "  Prefix: ${PREFIX:-none (root)}"
 
 # Stop service if running
 systemctl stop vault-reader 2>/dev/null || true
@@ -38,7 +44,7 @@ After=network.target
 Type=simple
 User=${SERVICE_USER}
 Group=${SERVICE_USER}
-ExecStart=${BIN_PATH} --vault ${VAULT_DIR} --data ${DATA_DIR} --addr :3000
+ExecStart=${BIN_PATH} --vault ${VAULT_DIR} --data ${DATA_DIR} --addr :3000${PREFIX:+ --prefix ${PREFIX}}
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
@@ -71,4 +77,8 @@ systemctl restart vault-reader
 echo "Done! Service installed and started."
 echo "  Status: systemctl status vault-reader"
 echo "  Logs:   journalctl -u vault-reader -f"
-echo "  URL:    http://localhost:3000"
+echo "  URL:    http://localhost:3000${PREFIX}"
+if [ -n "${PREFIX}" ]; then
+echo ""
+echo "⚠️  子路径 ${PREFIX} 已启用，请配置反向代理转发到 localhost:3000"
+fi
