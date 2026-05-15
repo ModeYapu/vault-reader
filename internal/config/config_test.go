@@ -1,7 +1,7 @@
 package config
 
 import (
-	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -34,12 +34,9 @@ func TestConfigFromArgs(t *testing.T) {
 }
 
 func TestConfigFromEnv(t *testing.T) {
-	os.Setenv("VAULT_DIR", "/env/vault")
-	os.Setenv("DATA_DIR", "/env/data")
-	os.Setenv("ADDR", ":9090")
-	defer os.Unsetenv("VAULT_DIR")
-	defer os.Unsetenv("DATA_DIR")
-	defer os.Unsetenv("ADDR")
+	t.Setenv("VAULT_DIR", "/env/vault")
+	t.Setenv("DATA_DIR", "/env/data")
+	t.Setenv("ADDR", ":9090")
 
 	cfg := Default()
 	cfg.ApplyEnv(false)
@@ -64,17 +61,62 @@ func TestConfigMissingVault(t *testing.T) {
 }
 
 func TestConfigEnvFallbackToArgs(t *testing.T) {
-	// Args take precedence over env
-	os.Setenv("VAULT_DIR", "/env/vault")
-	defer os.Unsetenv("VAULT_DIR")
+	t.Setenv("VAULT_DIR", "/env/vault")
 
 	args := []string{"--vault", "/args/vault"}
 	cfg, err := ParseArgs(args)
 	if err != nil {
 		t.Fatalf("ParseArgs failed: %v", err)
 	}
-	// Args should win
 	if cfg.VaultDir != "/args/vault" {
 		t.Errorf("expected args vault /args/vault, got %s", cfg.VaultDir)
+	}
+}
+
+func TestConfigDefaultDataDir(t *testing.T) {
+	args := []string{"--vault", "/my/vault"}
+	cfg, err := ParseArgs(args)
+	if err != nil {
+		t.Fatalf("ParseArgs failed: %v", err)
+	}
+	expected := filepath.Join("/my/vault", ".vault-reader-data")
+	if cfg.DataDir != expected {
+		t.Errorf("expected default data dir %s, got %s", expected, cfg.DataDir)
+	}
+}
+
+func TestConfigBaseURL(t *testing.T) {
+	t.Setenv("BASE_URL", "/prefix")
+	cfg := Default()
+	cfg.ApplyEnv(false)
+	if cfg.BaseURL != "/prefix" {
+		t.Errorf("expected base URL /prefix, got %s", cfg.BaseURL)
+	}
+}
+
+func TestConfigBaseURLFromArgs(t *testing.T) {
+	args := []string{"--vault", "/v", "--base-url", "/app"}
+	cfg, err := ParseArgs(args)
+	if err != nil {
+		t.Fatalf("ParseArgs failed: %v", err)
+	}
+	if cfg.BaseURL != "/app" {
+		t.Errorf("expected base URL /app, got %s", cfg.BaseURL)
+	}
+}
+
+func TestConfigInvalidFlag(t *testing.T) {
+	args := []string{"--unknown-flag"}
+	_, err := ParseArgs(args)
+	if err == nil {
+		t.Error("expected error for unknown flag")
+	}
+}
+
+func TestStringFlagNilGuard(t *testing.T) {
+	f := stringFlag{} // nil target and set
+	err := f.Set("value")
+	if err == nil {
+		t.Error("expected error when Set called on uninitialized stringFlag")
 	}
 }

@@ -82,6 +82,9 @@ func (f *stringFlag) String() string {
 }
 
 func (f *stringFlag) Set(v string) error {
+	if f.target == nil || f.set == nil {
+		return fmt.Errorf("stringFlag not initialized")
+	}
 	*f.target = v
 	*f.set = true
 	return nil

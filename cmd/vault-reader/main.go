@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -19,19 +18,28 @@ import (
 func main() {
 	cfg, err := config.ParseArgs(os.Args[1:])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		slog.Error("invalid arguments", "error", err)
 		os.Exit(1)
 	}
 
-	// Verify vault directory exists
-	if info, err := os.Stat(cfg.VaultDir); err != nil || !info.IsDir() {
-		fmt.Fprintf(os.Stderr, "Error: vault directory %q does not exist or is not a directory\n", cfg.VaultDir)
+	// Verify vault directory exists and is a directory
+	info, err := os.Stat(cfg.VaultDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			slog.Error("vault directory does not exist", "path", cfg.VaultDir)
+		} else {
+			slog.Error("cannot access vault directory", "path", cfg.VaultDir, "error", err)
+		}
+		os.Exit(1)
+	}
+	if !info.IsDir() {
+		slog.Error("vault path is not a directory", "path", cfg.VaultDir)
 		os.Exit(1)
 	}
 
 	// Ensure data directory exists
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: cannot create data directory %q: %v\n", cfg.DataDir, err)
+		slog.Error("cannot create data directory", "path", cfg.DataDir, "error", err)
 		os.Exit(1)
 	}
 
@@ -45,21 +53,22 @@ func main() {
 	dbPath := filepath.Join(cfg.DataDir, "vault-reader.db")
 	ix, err := indexer.New(dbPath, cfg.VaultDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to initialize indexer: %v\n", err)
+		slog.Error("failed to initialize indexer", "error", err)
 		os.Exit(1)
 	}
 	defer ix.Close()
 
-	// Run full index
+	// Run full index — fatal on failure to prevent serving empty/corrupt data
 	slog.Info("building index...")
 	if err := ix.FullIndex(); err != nil {
-		slog.Error("full index failed", "error", err)
+		slog.Error("full index failed, cannot start server", "error", err)
+		os.Exit(1)
 	}
 
 	// Start file watcher
 	watcher, err := indexer.NewWatcher(ix, cfg.VaultDir)
 	if err != nil {
-		slog.Warn("file watcher not available", "error", err)
+		slog.Warn("file watcher not available — vault changes will not be detected automatically", "error", err)
 	} else {
 		defer watcher.Close()
 		slog.Info("file watcher started")
@@ -80,16 +89,24 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Use a channel to propagate server errors to main goroutine,
+	// so deferred cleanups (DB close, watcher close) actually run.
+	serverErr := make(chan error, 1)
 	go func() {
 		slog.Info("listening", "addr", cfg.Addr)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server failed", "error", err)
-			os.Exit(1)
+			serverErr <- err
 		}
 	}()
 
-	<-ctx.Done()
-	slog.Info("shutting down...")
+	// Wait for either a shutdown signal or a server error
+	select {
+	case <-ctx.Done():
+		slog.Info("shutting down...")
+	case err := <-serverErr:
+		slog.Error("server exited unexpectedly", "error", err)
+		stop() // release signal resources
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
