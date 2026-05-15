@@ -21,6 +21,7 @@ import (
 // Server is the HTTP server for vault-reader.
 type Server struct {
 	vaultDir string
+	prefix   string
 	mux      *http.ServeMux
 	resolver *resolver.Resolver
 	indexer  *indexer.Indexer
@@ -33,6 +34,13 @@ type Option func(*Server)
 func WithIndexer(ix *indexer.Indexer) Option {
 	return func(s *Server) {
 		s.indexer = ix
+	}
+}
+
+// WithPrefix sets the URL subpath prefix.
+func WithPrefix(prefix string) Option {
+	return func(s *Server) {
+		s.prefix = prefix
 	}
 }
 
@@ -108,7 +116,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'")
-	s.mux.ServeHTTP(w, r)
+	if s.prefix != "" {
+		http.StripPrefix(s.prefix, s.mux).ServeHTTP(w, r)
+	} else {
+		s.mux.ServeHTTP(w, r)
+	}
 }
 
 func (s *Server) routes() {
@@ -138,7 +150,13 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(indexHTML))
+	html := indexHTML
+	if s.prefix != "" {
+		html = strings.ReplaceAll(html, "__P__", s.prefix)
+	} else {
+		html = strings.ReplaceAll(html, "__P__", "")
+	}
+	w.Write([]byte(html))
 }
 
 func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
@@ -224,6 +242,13 @@ func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	doc.HTML = parser.RenderWikiLinksInHTML(doc.HTML, s.resolveFunc())
+
+	// Prefix absolute API paths if running under a subpath
+	if s.prefix != "" {
+		doc.HTML = strings.ReplaceAll(doc.HTML, `href="/api/`, `href="`+s.prefix+`/api/`)
+		doc.HTML = strings.ReplaceAll(doc.HTML, `src="/assets`, `src="`+s.prefix+`/assets`)
+		doc.HTML = strings.ReplaceAll(doc.HTML, `href="/assets`, `href="`+s.prefix+`/assets`)
+	}
 
 	if s.indexer != nil {
 		backlinks, err := s.indexer.GetBacklinks(path)

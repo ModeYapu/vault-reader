@@ -85,7 +85,7 @@ func run() error {
 	}
 
 	// Create server with indexer
-	handler := server.New(cfg.VaultDir, server.WithIndexer(ix))
+	handler := server.New(cfg.VaultDir, server.WithIndexer(ix), server.WithPrefix(cfg.Prefix))
 
 	httpSrv := &http.Server{
 		Addr:         cfg.Addr,

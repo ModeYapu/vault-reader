@@ -57,8 +57,9 @@ open http://localhost:3000
 | `--vault` | required | Path to Obsidian Vault |
 | `--addr` | `:3000` | Listen address |
 | `--data` | `<vault>/.vault-reader-data` | Data directory for index |
+| `--prefix` | `""` | URL subpath prefix (e.g. `/vault`) |
 
-Environment variables: `VAULT_DIR`, `DATA_DIR`, `ADDR`
+Environment variables: `VAULT_DIR`, `DATA_DIR`, `ADDR`, `PREFIX`
 
 ## Docker
 
@@ -70,6 +71,14 @@ docker run -d \
   -v /path/to/vault:/vault:ro \
   -v vault-data:/data \
   vault-reader
+
+# With subpath (reverse proxy at /vault/):
+docker run -d \
+  -p 3000:3000 \
+  -e PREFIX=/vault \
+  -v /path/to/vault:/vault:ro \
+  -v vault-data:/data \
+  vault-reader --prefix /vault
 ```
 
 ## API Endpoints

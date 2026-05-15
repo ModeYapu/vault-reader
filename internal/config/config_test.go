@@ -100,3 +100,40 @@ func TestStringFlagNilGuard(t *testing.T) {
 		t.Error("expected error when Set called on uninitialized stringFlag")
 	}
 }
+
+func TestConfigPrefix(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", ""},
+		{"/vault", "/vault"},
+		{"vault", "/vault"},
+		{"/vault/", "/vault"},
+		{"  /vault/  ", "/vault"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			args := []string{"--vault", "/tmp/v", "--prefix", tt.input}
+			cfg, err := ParseArgs(args)
+			if err != nil {
+				t.Fatalf("ParseArgs failed: %v", err)
+			}
+			if cfg.Prefix != tt.expected {
+				t.Errorf("expected prefix %q, got %q", tt.expected, cfg.Prefix)
+			}
+		})
+	}
+}
+
+func TestConfigPrefixFromEnv(t *testing.T) {
+	t.Setenv("PREFIX", "/app")
+	args := []string{"--vault", "/tmp/v"}
+	cfg, err := ParseArgs(args)
+	if err != nil {
+		t.Fatalf("ParseArgs failed: %v", err)
+	}
+	if cfg.Prefix != "/app" {
+		t.Errorf("expected prefix /app, got %s", cfg.Prefix)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Config holds all application configuration.
@@ -12,6 +13,7 @@ type Config struct {
 	VaultDir string
 	DataDir  string
 	Addr     string
+	Prefix   string
 }
 
 // Default returns a Config with sensible defaults.
@@ -30,6 +32,7 @@ func ParseArgs(args []string) (*Config, error) {
 	fs.StringVar(&cfg.VaultDir, "vault", "", "Path to Obsidian Vault directory")
 	fs.StringVar(&cfg.DataDir, "data", "", "Path to data directory for index database")
 	fs.Var(&stringFlag{target: &cfg.Addr, set: &addrSet}, "addr", "Listen address")
+	fs.StringVar(&cfg.Prefix, "prefix", "", "URL subpath prefix (e.g. /vault)")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -47,6 +50,15 @@ func ParseArgs(args []string) (*Config, error) {
 		cfg.DataDir = filepath.Join(cfg.VaultDir, ".vault-reader-data")
 	}
 
+	// Normalize prefix: ensure it starts with / and does not end with /
+	cfg.Prefix = strings.TrimSpace(cfg.Prefix)
+	if cfg.Prefix != "" {
+		if !strings.HasPrefix(cfg.Prefix, "/") {
+			cfg.Prefix = "/" + cfg.Prefix
+		}
+		cfg.Prefix = strings.TrimRight(cfg.Prefix, "/")
+	}
+
 	return cfg, nil
 }
 
@@ -60,6 +72,9 @@ func (c *Config) ApplyEnv(addrSet bool) {
 	}
 	if v := os.Getenv("ADDR"); v != "" && !addrSet {
 		c.Addr = v
+	}
+	if v := os.Getenv("PREFIX"); v != "" && c.Prefix == "" {
+		c.Prefix = v
 	}
 }
 

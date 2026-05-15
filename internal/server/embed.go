@@ -7,15 +7,16 @@ const indexHTML = `<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vault Reader</title>
     <style>
-        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 300; font-display: swap; src: url(/vendor/inter-300.ttf) format('truetype'); }
-        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url(/vendor/inter-400.ttf) format('truetype'); }
-        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap; src: url(/vendor/inter-500.ttf) format('truetype'); }
-        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url(/vendor/inter-600.ttf) format('truetype'); }
-        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url(/vendor/inter-700.ttf) format('truetype'); }
-        @font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url(/vendor/jetbrains-400.ttf) format('truetype'); }
-        @font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url(/vendor/jetbrains-500.ttf) format('truetype'); }
+        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 300; font-display: swap; src: url(__P__/vendor/inter-300.ttf) format('truetype'); }
+        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url(__P__/vendor/inter-400.ttf) format('truetype'); }
+        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap; src: url(__P__/vendor/inter-500.ttf) format('truetype'); }
+        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url(__P__/vendor/inter-600.ttf) format('truetype'); }
+        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url(__P__/vendor/inter-700.ttf) format('truetype'); }
+        @font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url(__P__/vendor/jetbrains-400.ttf) format('truetype'); }
+        @font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url(__P__/vendor/jetbrains-500.ttf) format('truetype'); }
     </style>
-    <script src="/vendor/mermaid.min.js"></script>
+    <script src="__P__/vendor/mermaid.min.js"></script>
+    <script>const BASE='__P__';</script>
     <style>
         /* ==================== Theme: Light (default) ==================== */
         :root, [data-theme="light"] {
@@ -662,7 +663,7 @@ const indexHTML = `<!DOCTYPE html>
             pre.classList.add('vq-rendered');
             const yaml = block.textContent;
             try {
-                const resp = await fetch('/api/vault-query', {
+                const resp = await fetch(BASE+'/api/vault-query', {
                     method: 'POST',
                     headers: {'Content-Type': 'text/plain'},
                     body: yaml
@@ -934,7 +935,7 @@ const indexHTML = `<!DOCTYPE html>
 
     // ==================== Tree ====================
     async function loadTree() {
-        const resp = await fetch('/api/tree');
+        const resp = await fetch(BASE+'/api/tree');
         const tree = await resp.json();
         const sidebar = $('sidebar');
         sidebar.innerHTML = '<div class="sidebar-header">Explorer</div>';
@@ -993,7 +994,7 @@ const indexHTML = `<!DOCTYPE html>
         }
 
         try {
-            const resp = await fetch('/api/note?path=' + encodeURIComponent(path));
+            const resp = await fetch(BASE+'/api/note?path=' + encodeURIComponent(path));
             if (!resp.ok) throw new Error(resp.statusText);
             const note = await resp.json();
 
@@ -1153,7 +1154,7 @@ const indexHTML = `<!DOCTYPE html>
     let tagTreeData = null;
     async function loadTagTree() {
         try {
-            const resp = await fetch('/api/tag-tree');
+            const resp = await fetch(BASE+'/api/tag-tree');
             if (!resp.ok) { $('tagTree').innerHTML = '<div class="no-items">Tag tree unavailable</div>'; return; }
             const data = await resp.json();
             tagTreeData = data.items || [];
@@ -1201,7 +1202,7 @@ const indexHTML = `<!DOCTYPE html>
 
     async function showTagFiles(tag) {
         try {
-            const resp = await fetch('/api/tag?name=' + encodeURIComponent(tag));
+            const resp = await fetch(BASE+'/api/tag?name=' + encodeURIComponent(tag));
             if (!resp.ok) return;
             const data = await resp.json();
             const files = data.items || [];
@@ -1229,7 +1230,7 @@ const indexHTML = `<!DOCTYPE html>
     // ==================== Properties Panel ====================
     async function loadProperties(path) {
         try {
-            const resp = await fetch('/api/properties?path=' + encodeURIComponent(path));
+            const resp = await fetch(BASE+'/api/properties?path=' + encodeURIComponent(path));
             if (!resp.ok) { $('properties').innerHTML = '<div class="no-items">No properties</div>'; return; }
             const data = await resp.json();
             renderProperties(data.items || []);
@@ -1330,7 +1331,7 @@ const indexHTML = `<!DOCTYPE html>
         if (!q) { $('searchResults').style.display = 'none'; return; }
         searchTimeout = setTimeout(async () => {
             try {
-                const resp = await fetch('/api/search?q=' + encodeURIComponent(q));
+                const resp = await fetch(BASE+'/api/search?q=' + encodeURIComponent(q));
                 const data = await resp.json();
                 const results = data.items || [];
                 if (results.length === 0) {
@@ -1434,7 +1435,7 @@ const indexHTML = `<!DOCTYPE html>
     }
 
     async function loadGraphView(folder, tag) {
-        let url = '/api/graph?max=200';
+        let url = BASE+'/api/graph?max=200';
         if (folder) url += '&folder=' + encodeURIComponent(folder);
         if (tag) url += '&tag=' + encodeURIComponent(tag);
 
@@ -1553,7 +1554,7 @@ const indexHTML = `<!DOCTYPE html>
     // ==================== Canvas Viewer ====================
     async function loadCanvas(path) {
         try {
-            const resp = await fetch('/api/canvas?path=' + encodeURIComponent(path));
+            const resp = await fetch(BASE+'/api/canvas?path=' + encodeURIComponent(path));
             if (!resp.ok) throw new Error(resp.statusText);
             const doc = await resp.json();
 
@@ -1714,7 +1715,7 @@ const indexHTML = `<!DOCTYPE html>
     // ==================== Dashboard ====================
     async function loadDashboard() {
         try {
-            const resp = await fetch('/api/dashboard');
+            const resp = await fetch(BASE+'/api/dashboard');
             if (!resp.ok) throw new Error(resp.statusText);
             const data = await resp.json();
 
