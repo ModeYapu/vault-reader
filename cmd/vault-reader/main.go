@@ -7,11 +7,13 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"vault-reader/internal/config"
 	"vault-reader/internal/indexer"
+	"vault-reader/internal/middleware"
 	"vault-reader/internal/server"
 )
 
@@ -74,8 +76,56 @@ func main() {
 		slog.Info("file watcher started")
 	}
 
-	// Create server with indexer
-	handler := server.New(cfg.VaultDir, server.WithIndexer(ix))
+	// Initialize metrics
+	metrics := middleware.NewMetrics()
+
+	// Build server options from config
+	opts := []server.Option{
+		server.WithIndexer(ix),
+		server.WithMetrics(metrics),
+		server.WithConfigReload(func() error {
+			reloaded, err := cfg.Reload()
+			if err != nil {
+				return err
+			}
+			if reloaded {
+				slog.Info("configuration reloaded", "config", cfg.GetConfigPath())
+			}
+			return nil
+		}),
+	}
+
+	// Configure CORS
+	corsOrigins := strings.Split(cfg.CORSOrigins, ",")
+	for i, origin := range corsOrigins {
+		corsOrigins[i] = strings.TrimSpace(origin)
+	}
+	opts = append(opts, server.WithCORS(middleware.CORSConfig{
+		AllowedOrigins: corsOrigins,
+		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders: []string{"Content-Type", "Authorization"},
+		ExposedHeaders: []string{"X-Request-Id"},
+	}))
+
+	// Configure rate limiting if enabled
+	if cfg.RateLimit > 0 {
+		window, err := time.ParseDuration(cfg.RateWindow)
+		if err != nil {
+			slog.Warn("invalid rate limit window, using default", "error", err)
+			window = time.Minute
+		}
+		opts = append(opts, server.WithRateLimiting(cfg.RateLimit, window))
+		slog.Info("rate limiting enabled", "requests", cfg.RateLimit, "window", cfg.RateWindow)
+	}
+
+	// Configure basic authentication if both username and password are provided
+	if cfg.AuthUsername != "" && cfg.AuthPassword != "" {
+		opts = append(opts, server.WithBasicAuth(cfg.AuthUsername, cfg.AuthPassword))
+		slog.Info("basic authentication enabled")
+	}
+
+	// Create server with all options
+	handler := server.New(cfg.VaultDir, opts...)
 
 	httpSrv := &http.Server{
 		Addr:         cfg.Addr,
@@ -85,9 +135,9 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Graceful shutdown on signal
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+	// Set up signal handling for graceful shutdown and config reload
+	sigChan := make(chan os.Signal, 2)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
 	// Use a channel to propagate server errors to main goroutine,
 	// so deferred cleanups (DB close, watcher close) actually run.
@@ -99,19 +149,34 @@ func main() {
 		}
 	}()
 
-	// Wait for either a shutdown signal or a server error
-	select {
-	case <-ctx.Done():
-		slog.Info("shutting down...")
-	case err := <-serverErr:
-		slog.Error("server exited unexpectedly", "error", err)
-		stop() // release signal resources
+	// Wait for signals
+	for {
+		select {
+		case sig := <-sigChan:
+			switch sig {
+			case syscall.SIGINT, syscall.SIGTERM:
+				slog.Info("shutting down...")
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+					slog.Error("shutdown error", "error", err)
+				}
+				slog.Info("server stopped")
+				return
+			case syscall.SIGHUP:
+				slog.Info("received SIGHUP, reloading configuration")
+				if _, err := cfg.Reload(); err != nil {
+					slog.Error("config reload failed", "error", err)
+				} else {
+					slog.Info("configuration reloaded successfully",
+						"vault", cfg.VaultDir,
+						"addr", cfg.Addr,
+					)
+				}
+			}
+		case err := <-serverErr:
+			slog.Error("server exited unexpectedly", "error", err)
+			os.Exit(1)
+		}
 	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
-		slog.Error("shutdown error", "error", err)
-	}
-	slog.Info("server stopped")
 }

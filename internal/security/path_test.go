@@ -3,6 +3,7 @@ package security
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -50,6 +51,11 @@ func TestPathTraversalBlocked(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Skip Windows-specific tests on non-Windows platforms
+			if tt.name == "windows absolute" && runtime.GOOS != "windows" {
+				t.Skip("skipping Windows-specific test on " + runtime.GOOS)
+			}
+
 			err := ValidatePath(vaultDir, tt.path)
 			if err == nil {
 				t.Errorf("expected path %q to be blocked", tt.path)
