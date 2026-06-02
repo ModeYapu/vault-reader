@@ -1,0 +1,787 @@
+openapi: 3.0.3
+info:
+  title: Vault Reader API
+  description: A lightweight, read-only Obsidian Vault web reader API
+  version: 1.0.0
+  contact:
+    name: API Support
+    url: https://github.com/openclaw-vault
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: https://vault-reader.example.com
+    description: Production server
+
+tags:
+  - name: notes
+    description: Note operations
+  - name: search
+    description: Search operations
+  - name: tags
+    description: Tag operations
+  - name: graph
+    description: Graph visualization
+  - name: assets
+    description: Asset serving
+
+paths:
+  /tree:
+    get:
+      tags:
+        - notes
+      summary: Get file tree
+      description: Returns the complete directory tree of the vault
+      operationId: getTree
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TreeNode'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /note:
+    get:
+      tags:
+        - notes
+      summary: Get note content
+      description: Returns rendered markdown note with metadata
+      operationId: getNote
+      parameters:
+        - name: path
+          in: query
+          description: Path to the note file
+          required: true
+          schema:
+            type: string
+          example: "notes/example.md"
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+        '400':
+          description: Bad request - missing path parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - path traversal attempt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /search:
+    get:
+      tags:
+        - search
+      summary: Search notes
+      description: Full-text search across all notes using SQLite FTS5
+      operationId: searchNotes
+      parameters:
+        - name: q
+          in: query
+          description: Search query string
+          required: true
+          schema:
+            type: string
+          example: "golang tutorial"
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResults'
+        '400':
+          description: Bad request - empty query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service unavailable - indexer not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /backlinks:
+    get:
+      tags:
+        - notes
+      summary: Get backlinks for a note
+      description: Returns all notes that link to the specified note
+      operationId: getBacklinks
+      parameters:
+        - name: path
+          in: query
+          description: Path to the note file
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BacklinkResults'
+        '503':
+          description: Service unavailable - indexer not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tags:
+    get:
+      tags:
+        - tags
+      summary: Get all tags
+      description: Returns all tags with their file counts
+      operationId: getTags
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagResults'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tag:
+    get:
+      tags:
+        - tags
+      summary: Get files by tag
+      description: Returns all files that have the specified tag
+      operationId: getFilesByTag
+      parameters:
+        - name: name
+          in: query
+          description: Tag name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagFilesResults'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tag-tree:
+    get:
+      tags:
+        - tags
+      summary: Get hierarchical tag tree
+      description: Returns tags organized in a hierarchical structure
+      operationId: getTagTree
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagTreeResults'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /graph:
+    get:
+      tags:
+        - graph
+      summary: Get graph data
+      description: Returns nodes and edges for graph visualization
+      operationId: getGraph
+      parameters:
+        - name: folder
+          in: query
+          description: Filter by folder path
+          schema:
+            type: string
+        - name: tag
+          in: query
+          description: Filter by tag
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: Center the graph on this path
+          schema:
+            type: string
+        - name: depth
+          in: query
+          description: Graph depth (default: 1)
+          schema:
+            type: integer
+            default: 1
+        - name: max
+          in: query
+          description: Maximum nodes (default: 500)
+          schema:
+            type: integer
+            default: 500
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphData'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /dashboard:
+    get:
+      tags:
+        - notes
+      summary: Get dashboard data
+      description: Returns aggregated dashboard information
+      operationId: getDashboard
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vault-query:
+    post:
+      tags:
+        - notes
+      summary: Execute vault query
+      description: Executes a YAML-based vault query (table/list/cards)
+      operationId: vaultQuery
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [table, list, cards]
+                from:
+                  type: string
+                where:
+                  type: object
+                sort:
+                  type: string
+                order:
+                  type: string
+                  enum: [asc, desc]
+                limit:
+                  type: integer
+                fields:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultQueryResults'
+        '400':
+          description: Bad request - invalid query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /properties:
+    get:
+      tags:
+        - notes
+      summary: Get note properties
+      description: Returns YAML frontmatter properties for a note
+      operationId: getProperties
+      parameters:
+        - name: path
+          in: query
+          description: Path to the note file
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertiesResults'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /filter:
+    get:
+      tags:
+        - notes
+      summary: Filter notes by property
+      description: Returns notes matching a property key-value pair
+      operationId: filterByProperty
+      parameters:
+        - name: key
+          in: query
+          description: Property key
+          required: true
+          schema:
+            type: string
+        - name: value
+          in: query
+          description: Property value
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilterResults'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /canvas:
+    get:
+      tags:
+        - notes
+      summary: Get canvas data
+      description: Returns JSON canvas data for visualization
+      operationId: getCanvas
+      parameters:
+        - name: path
+          in: query
+          description: Path to the canvas file
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Canvas'
+        '400':
+          description: Bad request - invalid canvas JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - path traversal attempt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Canvas not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    TreeNode:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Node name
+        path:
+          type: string
+          description: Full path
+        type:
+          type: string
+          enum: [file, folder]
+          description: Node type
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/TreeNode'
+          description: Child nodes (for folders)
+
+    Note:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Note path
+        title:
+          type: string
+          description: Note title
+        html:
+          type: string
+          description: Rendered HTML content
+        backlinks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Backlink'
+          description: Notes linking to this note
+        properties:
+          type: object
+          description: YAML frontmatter properties
+          additionalProperties: true
+
+    Backlink:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Source note path
+        title:
+          type: string
+          description: Source note title
+        context:
+          type: string
+          description: Link context
+
+    SearchResults:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+          description: Search results
+
+    SearchResult:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Result note path
+        title:
+          type: string
+          description: Result note title
+        snippet:
+          type: string
+          description: Matching text snippet
+        rank:
+          type: number
+          description: Relevance rank
+
+    BacklinkResults:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Backlink'
+          description: Backlink results
+
+    TagResults:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+          description: Tag results
+
+    Tag:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Tag name
+        count:
+          type: integer
+          description: Number of files with this tag
+
+    TagFilesResults:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              title:
+                type: string
+          description: Files with the tag
+
+    TagTreeResults:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagTreeNode'
+          description: Hierarchical tag tree
+
+    TagTreeNode:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Tag or namespace name
+        count:
+          type: integer
+          description: Number of files
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagTreeNode'
+          description: Child tags
+
+    GraphData:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphNode'
+          description: Graph nodes
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphEdge'
+          description: Graph edges
+
+    GraphNode:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Node ID (path)
+        label:
+          type: string
+          description: Node label (title)
+        type:
+          type: string
+          description: Node type
+        tags:
+          type: array
+          items:
+            type: string
+          description: Node tags
+
+    GraphEdge:
+      type: object
+      properties:
+        source:
+          type: string
+          description: Source node ID
+        target:
+          type: string
+          description: Target node ID
+        type:
+          type: string
+          description: Edge type
+
+    Dashboard:
+      type: object
+      properties:
+        recent:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoteRef'
+          description: Recently modified notes
+        inbox:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoteRef'
+          description: Notes in inbox folder
+        active:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoteRef'
+          description: Active notes
+        debug:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoteRef'
+          description: Debug notes
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+          description: Top tags
+        canvas:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoteRef'
+          description: Canvas files
+
+    NoteRef:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Note path
+        title:
+          type: string
+          description: Note title
+        updated:
+          type: string
+          format: date-time
+          description: Last updated timestamp
+
+    VaultQueryResults:
+      type: object
+      properties:
+        type:
+          type: string
+          description: Query type
+        fields:
+          type: array
+          items:
+            type: string
+          description: Query fields
+        results:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          description: Query results
+
+    PropertiesResults:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              value:
+                type: object
+          description: Note properties
+
+    FilterResults:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoteRef'
+          description: Filtered notes
+
+    Canvas:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+              x:
+                type: number
+              y:
+                type: number
+              width:
+                type: number
+              height:
+                type: number
+              text:
+                type: string
+              file:
+                type: string
+          description: Canvas nodes
+        edges:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              from:
+                type: string
+              to:
+                type: string
+          description: Canvas edges
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        code:
+          type: string
+          description: Error code
+  security:
+    - BearerAuth: []

@@ -357,6 +357,65 @@ func (ix *Indexer) Search(query string, limit int) ([]SearchResult, error) {
 	return results, rows.Err()
 }
 
+// AdvancedSearch performs a full-text search with optional filters for tags and path prefix.
+func (ix *Indexer) AdvancedSearch(query string, tags []string, pathPrefix string, limit int) ([]SearchResult, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var whereClauses []string
+	var args []interface{}
+
+	// Build WHERE clause for FTS search
+	if query != "" {
+		cleanQuery := cleanFTSQuery(query)
+		whereClauses = append(whereClauses, fmt.Sprintf("f.path IN (SELECT path FROM file_fts WHERE file_fts MATCH '%s')", cleanQuery))
+	}
+
+	// Filter by tags if provided
+	if len(tags) > 0 {
+		for _, tag := range tags {
+			whereClauses = append(whereClauses, "f.path IN (SELECT file_path FROM tags WHERE tag = ?)")
+			args = append(args, tag)
+		}
+	}
+
+	// Filter by path prefix if provided
+	if pathPrefix != "" {
+		whereClauses = append(whereClauses, "(f.path LIKE ? || '/%' OR f.path = ?)")
+		args = append(args, escapeLike(pathPrefix), pathPrefix)
+	}
+
+	whereSQL := ""
+	if len(whereClauses) > 0 {
+		whereSQL = "WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	sqlQuery := fmt.Sprintf(`
+		SELECT DISTINCT f.path, f.title, '' as snippet
+		FROM files f
+		%s
+		ORDER BY f.mtime DESC
+		LIMIT ?`, whereSQL)
+	args = append(args, limit)
+
+	rows, err := ix.db.Query(sqlQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("advanced search query: %w", err)
+	}
+	defer rows.Close()
+
+	var results []SearchResult
+	for rows.Next() {
+		var r SearchResult
+		if err := rows.Scan(&r.Path, &r.Title, &r.Snippet); err != nil {
+			return nil, err
+		}
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}
+
 // SearchResult represents a single search result.
 type SearchResult struct {
 	Path    string `json:"path"`

@@ -1799,5 +1799,14 @@ const indexHTML = `<!DOCTYPE html>
         }
     });
     </script>
+  <!-- LogMonitor SDK + rrweb CoBrowse -->
+  <script src="https://cdn.jsdelivr.net/npm/rrweb/dist/rrweb-all.min.js"></script>
+  <script src="/logmon/sdk/logmonitor.min.js"></script>
+  <script>
+    if (typeof LogMonitor !== 'undefined' && typeof rrweb !== 'undefined') {
+      LogMonitor.init({ appId: 'vault-reader', dsn: '/logmon-api/events' });
+      LogMonitor.startCoBrowse();
+    }
+  </script>
 </body>
 </html>`

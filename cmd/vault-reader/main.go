@@ -124,6 +124,12 @@ func main() {
 		slog.Info("basic authentication enabled")
 	}
 
+	// Configure base URL for reverse proxy
+	if cfg.BaseURL != "" {
+		opts = append(opts, server.WithBaseURL(cfg.BaseURL))
+		slog.Info("base URL configured", "baseURL", cfg.BaseURL)
+	}
+
 	// Create server with all options
 	handler := server.New(cfg.VaultDir, opts...)
 

@@ -1,0 +1,11 @@
+# Vault Reader Go
+- Tech: Go 1.21+ + Gin + GORM
+- Entry: cmd/server/main.go
+- Routes: internal/routes/
+- Handlers: internal/handlers/
+- Models: internal/models/
+- Middleware: internal/middleware/
+- Config: config.yaml
+- Docker: Dockerfile
+- Swagger: docs/swagger.yaml
+- Port: 8080

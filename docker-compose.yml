@@ -1,20 +1,49 @@
 services:
   vault-reader:
-    image: vault-reader:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-latest}
+    image: vault-reader:${VERSION:-latest}
     container_name: vault-reader
     restart: unless-stopped
+
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
+
     environment:
       VAULT_DIR: /vault
       DATA_DIR: /data
       ADDR: ":3000"
+      GIN_MODE: release
+
+      # Optional: Enable authentication
+      # AUTH_USERNAME: ${AUTH_USERNAME:-}
+      # AUTH_PASSWORD: ${AUTH_PASSWORD:-}
+
+      # Optional: Rate limiting
+      # RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-100}
+      # RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-1m}
+
     volumes:
-      - /opt/obsidian-vault:/vault:ro
-      - /opt/vault-reader-data:/data
+      # Mount your Obsidian vault directory
+      - ${VAULT_PATH:-/opt/obsidian-vault}:/vault:ro
+      # Persist the index database
+      - vault-data:/data
+
+    # Read-only root filesystem for security
     read_only: true
+
+    # Temporary filesystem for write operations
     tmpfs:
-      - /tmp
+      - /tmp:mode=1777,size=10M
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+
+    # Resource limits
     deploy:
       resources:
         limits:
@@ -22,3 +51,29 @@ services:
           cpus: '1.0'
         reservations:
           memory: 128M
+          cpus: '0.25'
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  vault-data:
+    driver: local
+    name: vault-reader-data
+
+networks:
+  default:
+    name: vault-reader-network
+    driver: bridge

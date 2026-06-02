@@ -23,6 +23,7 @@ import (
 // Server is the HTTP server for vault-reader.
 type Server struct {
 	vaultDir      string
+	baseURL       string
 	mux           *http.ServeMux
 	resolver      *resolver.Resolver
 	indexer       *indexer.Indexer
@@ -36,6 +37,13 @@ type Server struct {
 
 // Option configures a Server.
 type Option func(*Server)
+
+// WithBaseURL sets the base URL prefix for reverse proxy.
+func WithBaseURL(baseURL string) Option {
+	return func(s *Server) {
+		s.baseURL = baseURL
+	}
+}
 
 // WithIndexer sets the indexer for the server.
 func WithIndexer(ix *indexer.Indexer) Option {
@@ -186,7 +194,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 
-	chain(s.mux).ServeHTTP(w, r)
+	var handler http.Handler = s.mux
+	if s.baseURL != "" {
+		handler = http.StripPrefix(s.baseURL, s.mux)
+	}
+
+	chain(handler).ServeHTTP(w, r)
 }
 
 func (s *Server) routes() {
@@ -224,7 +237,12 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(indexHTML))
+	html := indexHTML
+	if s.baseURL != "" {
+		html = strings.ReplaceAll(html, "fetch('/api/", "fetch('"+s.baseURL+"/api/")
+		html = strings.ReplaceAll(html, "href=\"/", "href=\""+s.baseURL+"/")
+	}
+	w.Write([]byte(html))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
