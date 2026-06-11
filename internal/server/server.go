@@ -241,6 +241,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if s.baseURL != "" {
 		html = strings.ReplaceAll(html, "fetch('/api/", "fetch('"+s.baseURL+"/api/")
 		html = strings.ReplaceAll(html, "href=\"/", "href=\""+s.baseURL+"/")
+		html = strings.ReplaceAll(html, "src=\"/vendor/", "src=\""+s.baseURL+"/vendor/")
+		html = strings.ReplaceAll(html, "src=\"/logmon/", "src=\""+s.baseURL+"/logmon/")
 	}
 	w.Write([]byte(html))
 }

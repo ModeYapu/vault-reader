@@ -16,6 +16,9 @@ const indexHTML = `<!DOCTYPE html>
         @font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url(/vendor/jetbrains-500.ttf) format('truetype'); }
     </style>
     <script src="/vendor/mermaid.min.js"></script>
+    <link rel="stylesheet" href="/vendor/katex.min.css">
+    <script src="/vendor/katex.min.js"></script>
+    <script src="/vendor/auto-render.min.js"></script>
     <style>
         /* ==================== Theme: Light (default) ==================== */
         :root, [data-theme="light"] {
@@ -651,6 +654,21 @@ const indexHTML = `<!DOCTYPE html>
         }
     })();
 
+    function renderMath() {
+        const el = document.querySelector('.note-content');
+        if (el && typeof renderMathInElement === 'function') {
+            renderMathInElement(el, {
+                delimiters: [
+                    {left: '$$', right: '$$', display: true},
+                    {left: '$', right: '$', display: false},
+                    {left: '\\(', right: '\\)', display: false},
+                    {left: '\\[', right: '\\]', display: true}
+                ],
+                throwOnError: false
+            });
+        }
+    }
+
     async function renderVaultQueries() {
         const content = document.querySelector('.note-content');
         if (!content) return;
@@ -1022,6 +1040,9 @@ const indexHTML = `<!DOCTYPE html>
 
             // Render vault-query blocks
             renderVaultQueries();
+
+            // Render math formulas with KaTeX
+            renderMath();
 
             // Scroll to block or heading if hash target exists
             if (hashTarget) {
@@ -1804,9 +1825,44 @@ const indexHTML = `<!DOCTYPE html>
   <script src="/logmon/sdk/logmonitor.min.js"></script>
   <script>
     if (typeof LogMonitor !== 'undefined' && typeof rrweb !== 'undefined') {
-      LogMonitor.init({ appId: 'vault-reader', dsn: '/logmon-api/events' });
-      LogMonitor.startCoBrowse();
+      LogMonitor.init({ 
+        appId: 'vault-reader', 
+        dsn: '/logmon-api/events',
+        cobrowse: { 
+          enabled: true,
+          wsUrl: (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws/cobrowse'
+        }
+      });
+      // Ensure cobrowse starts after SDK initialization
+      setTimeout(function() {
+        if (LogMonitor.cobrowse && LogMonitor.cobrowse.start) {
+          LogMonitor.cobrowse.start().catch(function(e) { console.warn('CoBrowse start failed:', e); });
+        }
+      }, 2000);
     }
+  </script>
+  <!-- Remote Assist SDK -->
+  <script src="/vendor/remote-assist-sdk.js"></script>
+  <script>
+  (function() {
+    var params = new URLSearchParams(window.location.search);
+    var sessionId = params.get('ra_session') || params.get('sessionId');
+    var token = params.get('ra_token') || params.get('token');
+    var gateway = params.get('ra_gateway') || params.get('gatewayUrl');
+    if (sessionId && token && gateway && typeof RemoteAssist !== 'undefined') {
+      RemoteAssist.connectRemoteAssistClient({
+        gatewayUrl: gateway,
+        sessionId: sessionId,
+        participantId: 'vault-reader-' + sessionId.slice(0, 8),
+        authToken: token,
+        masking: {
+          selectors: ['textarea', 'input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]):not([type=reset]):not([type=hidden])', '[data-remote-assist-mask]'],
+          attributeNames: ['value', 'placeholder']
+        }
+      });
+      console.log('[RemoteAssist] Connected to session', sessionId);
+    }
+  })();
   </script>
 </body>
 </html>`
