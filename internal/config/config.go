@@ -12,13 +12,13 @@ import (
 
 // ConfigFile represents the YAML configuration file structure.
 type ConfigFile struct {
-	Vault     string `yaml:"vault"`
-	DataDir   string `yaml:"data_dir"`
-	Addr      string `yaml:"addr"`
-	BaseURL   string `yaml:"base_url"`
-	Auth      *AuthConfig `yaml:"auth"`
+	Vault     string           `yaml:"vault"`
+	DataDir   string           `yaml:"data_dir"`
+	Addr      string           `yaml:"addr"`
+	BaseURL   string           `yaml:"base_url"`
+	Auth      *AuthConfig      `yaml:"auth"`
 	RateLimit *RateLimitConfig `yaml:"rate_limit"`
-	CORS      *CORSConfig `yaml:"cors"`
+	CORS      *CORSConfig      `yaml:"cors"`
 }
 
 // AuthConfig holds authentication configuration.

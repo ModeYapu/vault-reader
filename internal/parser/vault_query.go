@@ -6,13 +6,13 @@ import (
 
 // VaultQuery represents a parsed vault-query code block.
 type VaultQuery struct {
-	Type   string   `yaml:"type"`   // table, list, cards
-	From   string   `yaml:"from"`   // folder prefix
-	Where  map[string]string `yaml:"where"` // key=value filters
-	Sort   string   `yaml:"sort"`   // field name
-	Order  string   `yaml:"order"`  // desc or asc
-	Limit  int      `yaml:"limit"`  // max results
-	Fields []string `yaml:"fields"` // columns to display
+	Type   string            `yaml:"type"`   // table, list, cards
+	From   string            `yaml:"from"`   // folder prefix
+	Where  map[string]string `yaml:"where"`  // key=value filters
+	Sort   string            `yaml:"sort"`   // field name
+	Order  string            `yaml:"order"`  // desc or asc
+	Limit  int               `yaml:"limit"`  // max results
+	Fields []string          `yaml:"fields"` // columns to display
 }
 
 // ParseVaultQuery parses the YAML content of a vault-query code block.

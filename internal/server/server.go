@@ -22,17 +22,17 @@ import (
 
 // Server is the HTTP server for vault-reader.
 type Server struct {
-	vaultDir      string
-	baseURL       string
-	mux           *http.ServeMux
-	resolver      *resolver.Resolver
-	indexer       *indexer.Indexer
-	middleware    []func(http.Handler) http.Handler
-	corsConfig    middleware.CORSConfig
-	rateLimiter   *middleware.RateLimiter
-	authConfig    *middleware.BasicAuthConfig
-	metrics       *middleware.Metrics
-	configReload  func() error
+	vaultDir     string
+	baseURL      string
+	mux          *http.ServeMux
+	resolver     *resolver.Resolver
+	indexer      *indexer.Indexer
+	middleware   []func(http.Handler) http.Handler
+	corsConfig   middleware.CORSConfig
+	rateLimiter  *middleware.RateLimiter
+	authConfig   *middleware.BasicAuthConfig
+	metrics      *middleware.Metrics
+	configReload func() error
 }
 
 // Option configures a Server.
@@ -774,10 +774,10 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-		if info.IsDir() {
-			http.Error(w, "not a file", http.StatusBadRequest)
-			return
-		}
+	if info.IsDir() {
+		http.Error(w, "not a file", http.StatusBadRequest)
+		return
+	}
 
 	contentType := contentTypeFromExt(filepath.Ext(info.Name()))
 	w.Header().Set("Content-Type", contentType)
@@ -1487,4 +1487,3 @@ components:
         target:
           type: string
 `
-

@@ -237,14 +237,14 @@ func (ix *Indexer) indexFile(tx *sql.Tx, f scanner.VaultFile, now int64) error {
 		}
 	}
 
-		// Insert blocks
-		for _, b := range doc.Blocks {
-			_, err = tx.Exec(`INSERT INTO blocks (file_path, block_id, text, line) VALUES (?, ?, ?, ?)`,
-				f.Path, b.ID, b.Text, b.Line)
-			if err != nil {
-				return fmt.Errorf("insert block: %w", err)
-			}
+	// Insert blocks
+	for _, b := range doc.Blocks {
+		_, err = tx.Exec(`INSERT INTO blocks (file_path, block_id, text, line) VALUES (?, ?, ?, ?)`,
+			f.Path, b.ID, b.Text, b.Line)
+		if err != nil {
+			return fmt.Errorf("insert block: %w", err)
 		}
+	}
 
 	return nil
 }
@@ -487,10 +487,10 @@ type TagCount struct {
 
 // TagTreeNode represents a node in the hierarchical tag tree.
 type TagTreeNode struct {
-	Name     string         `json:"name"`
-	FullName string         `json:"fullName"`
-	Count    int            `json:"count"`
-	Children []TagTreeNode  `json:"children,omitempty"`
+	Name     string        `json:"name"`
+	FullName string        `json:"fullName"`
+	Count    int           `json:"count"`
+	Children []TagTreeNode `json:"children,omitempty"`
 }
 
 // GetTagTree returns all tags organized into a tree structure based on "/" separators.
@@ -660,10 +660,10 @@ func (ix *Indexer) FilterByProperty(key, value string) ([]TagFile, error) {
 
 // BlockRef represents a block reference stored in the index.
 type BlockRef struct {
-	Path     string `json:"path"`
-	BlockID  string `json:"blockId"`
-	Text     string `json:"text"`
-	Line     int    `json:"line"`
+	Path    string `json:"path"`
+	BlockID string `json:"blockId"`
+	Text    string `json:"text"`
+	Line    int    `json:"line"`
 }
 
 // GetBlock returns the block reference for a given block ID.
@@ -855,7 +855,9 @@ func (ix *Indexer) GetDashboard() (*DashboardData, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var f TagFile
-		if err := rows.Scan(&f.Path, &f.Title); err != nil { continue }
+		if err := rows.Scan(&f.Path, &f.Title); err != nil {
+			continue
+		}
 		data.Recent = append(data.Recent, f)
 	}
 
@@ -870,7 +872,9 @@ func (ix *Indexer) GetDashboard() (*DashboardData, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var f TagFile
-		if err := rows.Scan(&f.Path, &f.Title); err != nil { continue }
+		if err := rows.Scan(&f.Path, &f.Title); err != nil {
+			continue
+		}
 		data.Inbox = append(data.Inbox, f)
 	}
 
@@ -887,7 +891,9 @@ func (ix *Indexer) GetDashboard() (*DashboardData, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var f TagFile
-		if err := rows.Scan(&f.Path, &f.Title); err != nil { continue }
+		if err := rows.Scan(&f.Path, &f.Title); err != nil {
+			continue
+		}
 		data.Active = append(data.Active, f)
 	}
 
@@ -904,7 +910,9 @@ func (ix *Indexer) GetDashboard() (*DashboardData, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var f TagFile
-		if err := rows.Scan(&f.Path, &f.Title); err != nil { continue }
+		if err := rows.Scan(&f.Path, &f.Title); err != nil {
+			continue
+		}
 		data.Debug = append(data.Debug, f)
 	}
 

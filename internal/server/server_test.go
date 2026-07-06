@@ -297,11 +297,11 @@ func createDashboardVault(t *testing.T) (*Server, string) {
 	}
 
 	files := map[string]string{
-		"00_Inbox/未整理笔记.md":        "---\ntags: [inbox]\n---\n# 未整理笔记\n内容",
-		"10_Reference/参考资料.md":       "---\ntags: [ref]\nstatus: active\n---\n# 参考资料\n内容",
-		"20_Debug/bug1.md":            "---\ntags: [debug]\nstatus: active\ntype: debug-note\n---\n# Bug 1\n内容",
-		"20_Debug/bug2.md":            "---\ntags: [debug]\ntype: debug-note\n---\n# Bug 2\n内容",
-		"30_Dashboard/首页.md":         "# 首页\n欢迎",
+		"00_Inbox/未整理笔记.md":    "---\ntags: [inbox]\n---\n# 未整理笔记\n内容",
+		"10_Reference/参考资料.md": "---\ntags: [ref]\nstatus: active\n---\n# 参考资料\n内容",
+		"20_Debug/bug1.md":     "---\ntags: [debug]\nstatus: active\ntype: debug-note\n---\n# Bug 1\n内容",
+		"20_Debug/bug2.md":     "---\ntags: [debug]\ntype: debug-note\n---\n# Bug 2\n内容",
+		"30_Dashboard/首页.md":   "# 首页\n欢迎",
 	}
 	for path, content := range files {
 		fullPath := filepath.Join(vaultDir, filepath.FromSlash(path))

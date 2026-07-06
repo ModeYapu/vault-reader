@@ -46,11 +46,11 @@ HTTP_PROXY 和 HTTPS_PROXY 设置。
 
 ![[attachments/架构图.png]]
 `,
-		"10_Reference/官方文档.md": "# 官方文档\n\n参考内容 [[OpenClaw]]",
-		"20_Debug/OpenClaw.md":   "# OpenClaw\n\n这是 OpenClaw 的内容。\n\n[[Codex]]",
-		"20_Debug/Codex.md":      "# Codex\n\n[[OpenClaw]] [[Docker|Docker 链接]]",
-		"20_Debug/Docker.md":     "# Docker\n\nDocker 内容",
-		"30_Dashboard/常用系统入口.md": "# 常用系统入口\n\n- [[OpenClaw]]\n- [[Codex]]",
+		"10_Reference/官方文档.md":        "# 官方文档\n\n参考内容 [[OpenClaw]]",
+		"20_Debug/OpenClaw.md":        "# OpenClaw\n\n这是 OpenClaw 的内容。\n\n[[Codex]]",
+		"20_Debug/Codex.md":           "# Codex\n\n[[OpenClaw]] [[Docker|Docker 链接]]",
+		"20_Debug/Docker.md":          "# Docker\n\nDocker 内容",
+		"30_Dashboard/常用系统入口.md":      "# 常用系统入口\n\n- [[OpenClaw]]\n- [[Codex]]",
 		"90_Templates/Web Clip 模板.md": "# Web Clip 模板\n\n模板内容",
 	}
 	for path, content := range files {

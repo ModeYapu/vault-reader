@@ -14,14 +14,14 @@ import (
 
 // Watcher watches the vault directory for changes and triggers reindex.
 type Watcher struct {
-	indexer  *Indexer
-	vaultDir string
-	watcher  *fsnotify.Watcher
-	debounce time.Duration
-	done     chan struct{}
+	indexer   *Indexer
+	vaultDir  string
+	watcher   *fsnotify.Watcher
+	debounce  time.Duration
+	done      chan struct{}
 	closeOnce sync.Once
-	mu       sync.Mutex
-	timer    *time.Timer
+	mu        sync.Mutex
+	timer     *time.Timer
 }
 
 // NewWatcher creates a new file watcher.

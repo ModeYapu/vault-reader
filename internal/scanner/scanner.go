@@ -14,8 +14,8 @@ type VaultFile struct {
 	AbsPath    string    `json:"-"`
 	Name       string    `json:"name"`
 	Ext        string    `json:"ext"`
-	IsMarkdown bool     `json:"isMarkdown"`
-	IsCanvas   bool     `json:"isCanvas"`
+	IsMarkdown bool      `json:"isMarkdown"`
+	IsCanvas   bool      `json:"isCanvas"`
 	Size       int64     `json:"size"`
 	ModTime    time.Time `json:"modTime"`
 }

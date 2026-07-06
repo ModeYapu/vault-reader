@@ -29,17 +29,17 @@ func createTestVault(t *testing.T) string {
 	}
 
 	files := map[string]string{
-		"00_Inbox/临时记录.md":                 "# 临时记录\n一些内容",
-		"10_Reference/官方文档.md":              "# 官方文档\n参考内容",
-		"20_Debug/OpenClaw.md":              "# OpenClaw\n内容",
-		"20_Debug/Codex.md":                 "# Codex\n内容",
-		"20_Debug/Docker.md":                "# Docker\n内容",
-		"30_Dashboard/常用系统入口.md":           "# 常用系统入口",
-		"90_Templates/Web Clip 模板.md":       "# Web Clip 模板",
-		"attachments/架构图.png":               "fake-png",
-		".obsidian/config":                  "config",
-		".git/HEAD":                         "ref: refs/heads/main",
-		"node_modules/fake/index.js":        "module.exports = {}",
+		"00_Inbox/临时记录.md":            "# 临时记录\n一些内容",
+		"10_Reference/官方文档.md":        "# 官方文档\n参考内容",
+		"20_Debug/OpenClaw.md":        "# OpenClaw\n内容",
+		"20_Debug/Codex.md":           "# Codex\n内容",
+		"20_Debug/Docker.md":          "# Docker\n内容",
+		"30_Dashboard/常用系统入口.md":      "# 常用系统入口",
+		"90_Templates/Web Clip 模板.md": "# Web Clip 模板",
+		"attachments/架构图.png":         "fake-png",
+		".obsidian/config":            "config",
+		".git/HEAD":                   "ref: refs/heads/main",
+		"node_modules/fake/index.js":  "module.exports = {}",
 	}
 	for path, content := range files {
 		fullPath := filepath.Join(vaultDir, filepath.FromSlash(path))

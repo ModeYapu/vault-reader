@@ -621,6 +621,7 @@ const indexHTML = `<!DOCTYPE html>
     <script>
     const $ = id => document.getElementById(id);
     let currentPath = null;
+    let collapsedFolders = new Set(JSON.parse(localStorage.getItem('collapsedFolders') || '[]'));
 
     // ==================== Mobile Sidebar Toggle ====================
     function toggleSidebar() {
@@ -961,12 +962,28 @@ const indexHTML = `<!DOCTYPE html>
         const r = document.createElement('div');
         r.className = 'sidebar-resizer'; r.id = 'sidebarResizer';
         sidebar.appendChild(r);
+        // Auto-expand to current note
+        if (currentPath) {
+            expandToPath(currentPath);
+        }
     }
 
-    function renderTree(items, container) {
+    function expandToPath(path) {
+        const parts = path.split('/').slice(0, -1); // Remove file name
+        let currentPathStr = '';
+        parts.forEach(part => {
+            currentPathStr = currentPathStr ? currentPathStr + '/' + part : part;
+            collapsedFolders.delete(currentPathStr);
+            localStorage.setItem('collapsedFolders', JSON.stringify([...collapsedFolders]));
+        });
+        loadTree(); // Reload with updated collapsed state
+    }
+
+    function renderTree(items, container, basePath = '') {
         items.forEach(item => {
             const div = document.createElement('div');
             div.className = 'tree-item';
+            const fullPath = basePath ? basePath + '/' + item.path : item.path;
             if (item.type === 'dir') {
                 const dirEl = document.createElement('div');
                 dirEl.className = 'tree-dir';
@@ -975,10 +992,26 @@ const indexHTML = `<!DOCTYPE html>
                 div.appendChild(dirEl);
                 const children = document.createElement('div');
                 children.className = 'tree-children';
-                renderTree(item.children || [], children);
+                // Check if this folder was collapsed
+                if (collapsedFolders.has(fullPath)) {
+                    children.classList.add('collapsed');
+                }
+                renderTree(item.children || [], children, fullPath);
                 div.appendChild(children);
                 const chevron = dirEl.querySelector('.chevron');
-                dirEl.onclick = () => { children.classList.toggle('collapsed'); chevron.classList.toggle('collapsed'); };
+                if (collapsedFolders.has(fullPath)) {
+                    chevron.classList.add('collapsed');
+                }
+                dirEl.onclick = () => {
+                    const isCollapsed = children.classList.toggle('collapsed');
+                    chevron.classList.toggle('collapsed');
+                    if (isCollapsed) {
+                        collapsedFolders.add(fullPath);
+                    } else {
+                        collapsedFolders.delete(fullPath);
+                    }
+                    localStorage.setItem('collapsedFolders', JSON.stringify([...collapsedFolders]));
+                };
             } else {
                 const isActive = item.path === currentPath;
                 const fileEl = document.createElement('div');
@@ -1065,6 +1098,54 @@ const indexHTML = `<!DOCTYPE html>
             setTimeout(() => { target.style.background = ''; target.style.borderRadius = ''; }, 2000);
         }
     }
+
+    // ==================== Link Interception ====================
+    document.addEventListener('click', e => {
+        const link = e.target.closest('a');
+        if (!link) return;
+
+        const href = link.getAttribute('href');
+        if (!href) return;
+
+        // Internal wiki links: /api/note?path=...
+        if (href.startsWith('/api/note?path=')) {
+            e.preventDefault();
+            const path = href.replace('/api/note?path=', '');
+            loadNote(decodeURIComponent(path));
+            return;
+        }
+
+        // Internal asset links: /assets?path=...
+        if (href.startsWith('/assets?path=')) {
+            // Let assets open naturally (they're images/files)
+            return;
+        }
+
+        // Internal links: #heading
+        if (href.startsWith('#')) {
+            const id = href.substring(1);
+            scrollToElement(id);
+            e.preventDefault();
+            return;
+        }
+    });
+
+    // Right-click context menu for internal links: copy proper URL
+    document.addEventListener('contextmenu', e => {
+        const link = e.target.closest('a');
+        if (!link) return;
+
+        const href = link.getAttribute('href');
+        if (href && href.startsWith('/api/note?path=')) {
+            // Don't prevent default, but the href should be usable
+            // The actual URL will be: /vault/?token=...&path=...
+            const path = href.replace('/api/note?path=', '');
+            const token = new URLSearchParams(window.location.search).get('token');
+            if (token) {
+                link.setAttribute('href', '/vault/?token=' + encodeURIComponent(token) + '&path=' + encodeURIComponent(path));
+            }
+        }
+    });
 
     // ==================== Mermaid Click (delegated) ====================
     document.addEventListener('click', e => {
@@ -1822,7 +1903,7 @@ const indexHTML = `<!DOCTYPE html>
     </script>
   <!-- LogMonitor SDK + rrweb CoBrowse -->
   <script src="https://cdn.jsdelivr.net/npm/rrweb/dist/rrweb-all.min.js"></script>
-  <script src="/logmon/sdk/logmonitor.min.js"></script>
+  <script src="/logmon/sdk/logmonitor.min.js?v=20260611e"></script>
   <script>
     if (typeof LogMonitor !== 'undefined' && typeof rrweb !== 'undefined') {
       LogMonitor.init({ 

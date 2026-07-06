@@ -183,17 +183,17 @@ func BasicAuth(cfg BasicAuthConfig) func(http.Handler) http.Handler {
 // TokenBucketRateLimiter implements token bucket rate limiting per IP address.
 // This provides smoother rate limiting compared to fixed window algorithms.
 type TokenBucketRateLimiter struct {
-	mu          sync.RWMutex
-	clients     map[string]*tokenBucket
-	capacity    int64        // Maximum tokens in bucket
-	refillRate  int64        // Tokens added per second
-	refillTick  time.Duration // How often to add tokens
+	mu         sync.RWMutex
+	clients    map[string]*tokenBucket
+	capacity   int64         // Maximum tokens in bucket
+	refillRate int64         // Tokens added per second
+	refillTick time.Duration // How often to add tokens
 }
 
 type tokenBucket struct {
-	tokens      int64
-	lastRefill  time.Time
-	mu          sync.Mutex
+	tokens     int64
+	lastRefill time.Time
+	mu         sync.Mutex
 }
 
 // NewTokenBucketRateLimiter creates a token bucket rate limiter.
@@ -320,9 +320,9 @@ func Recovery(next http.Handler) http.Handler {
 // Metrics tracks HTTP request metrics for Prometheus.
 type Metrics struct {
 	mu              sync.RWMutex
-	requestsTotal   map[string]int64  // path -> count
+	requestsTotal   map[string]int64           // path -> count
 	requestDuration map[string][]time.Duration // path -> durations
-	errorsTotal     map[string]int64  // path -> error count
+	errorsTotal     map[string]int64           // path -> error count
 	activeRequests  int64
 }
 
